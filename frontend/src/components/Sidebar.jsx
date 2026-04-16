@@ -6,6 +6,8 @@ import {
   BarChart2, Settings, LogOut, Bot
 } from 'lucide-react'
 
+const BUSINESS_NAME = import.meta.env.VITE_BUSINESS_NAME || 'BotPay'
+
 const links = [
   { to: '/inbox',        icon: MessageSquare, label: 'Bandeja' },
   { to: '/contacts',     icon: Users,         label: 'Contactos' },
@@ -28,9 +30,8 @@ export default function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 h-screen w-16 bg-slate-900 flex flex-col items-center py-4 gap-1 z-50">
       {/* Logo */}
-      <div className="mb-4 p-2 bg-indigo-600 rounded-xl relative">
+      <div className="mb-4 p-2 bg-indigo-600 rounded-xl relative" title={BUSINESS_NAME}>
         <Bot size={24} className="text-white" />
-        {/* Indicador de conexión WebSocket */}
         <span
           title={connected ? 'Tiempo real activo' : 'Sin conexión en tiempo real'}
           className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900 transition-colors

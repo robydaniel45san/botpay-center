@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import api from '../lib/api'
 import { getSocket } from '../lib/socket'
-import { Send, Bot, User, Clock, CheckCheck, Search, UserCheck, QrCode, X } from 'lucide-react'
+import { Send, Bot, User, Clock, CheckCheck, Search, UserCheck, QrCode, X, AlertTriangle } from 'lucide-react'
 
 const STATUS_LABELS = { bot: 'Bot', open: 'Agente', pending: 'Pendiente', resolved: 'Resuelto' }
 const STATUS_COLORS = {
@@ -105,9 +105,11 @@ export default function Inbox() {
   const [statusFilter, setStatusFilter] = useState('')
   const [loadingConvs, setLoadingConvs] = useState(true)
   const [qrModal, setQrModal] = useState(false)
-  const [qrText, setQrText] = useState('')
-  const [qrLabel, setQrLabel] = useState('')
+  const [qrAmount, setQrAmount] = useState('')
+  const [qrDesc, setQrDesc] = useState('')
+  const [qrBank, setQrBank] = useState('bmsc')
   const [sendingQr, setSendingQr] = useState(false)
+  const [watchdogAlerts, setWatchdogAlerts] = useState([])
   const bottomRef = useRef(null)
 
   // Cargar conversaciones
@@ -146,11 +148,27 @@ export default function Inbox() {
     socket.on('inbox_update', () => loadConversations())
     socket.on('payment_received', ({ conversationId }) => {
       if (activeConv?.id === conversationId) openConversation(activeConv)
+      loadConversations()
+    })
+    socket.on('watchdog:alert', (alert) => {
+      if (alert.status === 'down') {
+        setWatchdogAlerts((prev) => {
+          const exists = prev.find((a) => a.service === alert.service)
+          return exists ? prev : [...prev, alert]
+        })
+        // Auto-dismiss después de 10s si se recupera
+        setTimeout(() => {
+          setWatchdogAlerts((prev) => prev.filter((a) => a.service !== alert.service || a.status !== 'down'))
+        }, 10_000)
+      } else {
+        setWatchdogAlerts((prev) => prev.filter((a) => a.service !== alert.service))
+      }
     })
     return () => {
       socket.off('new_message')
       socket.off('inbox_update')
       socket.off('payment_received')
+      socket.off('watchdog:alert')
     }
   }, [activeConv, loadConversations])
 
@@ -189,24 +207,44 @@ export default function Inbox() {
 
   const sendQR = async (e) => {
     e.preventDefault()
-    if (!qrText.trim() || !activeConv) return
+    const amount = parseFloat(qrAmount)
+    if (!amount || amount <= 0 || !activeConv) return
     setSendingQr(true)
     try {
-      const res = await api.post(`/crm/conversations/${activeConv.id}/qr`, {
-        text: qrText.trim(),
-        label: qrLabel.trim() || undefined,
+      await api.post(`/crm/conversations/${activeConv.id}/qr`, {
+        amount,
+        description: qrDesc.trim() || 'Cobro CRM',
+        bank: qrBank,
       })
-      setMessages((prev) => [...prev, res.data])
       setQrModal(false)
-      setQrText('')
-      setQrLabel('')
+      setQrAmount('')
+      setQrDesc('')
+      setQrBank('bmsc')
+      openConversation(activeConv)
     } finally {
       setSendingQr(false)
     }
   }
 
   return (
-    <div className="flex h-screen bg-white">
+    <div className="flex flex-col h-screen bg-white">
+      {/* ── Alertas Watchdog ─────────────────────────── */}
+      {watchdogAlerts.length > 0 && (
+        <div className="flex flex-col gap-1 px-3 pt-2">
+          {watchdogAlerts.map((a) => (
+            <div key={a.service} className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={13} />
+                <span><strong>{a.service}</strong> — {a.error || 'Sin respuesta'}</span>
+              </div>
+              <button onClick={() => setWatchdogAlerts((p) => p.filter((x) => x.service !== a.service))} className="opacity-60 hover:opacity-100">
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    <div className="flex flex-1 overflow-hidden">
       {/* ── Lista de conversaciones ─────────────────── */}
       <div className="w-80 border-r border-slate-200 flex flex-col shrink-0">
         {/* Header */}
@@ -334,17 +372,17 @@ export default function Inbox() {
         </div>
       )}
 
-      {/* ── Modal Generar QR ────────────────────────── */}
+      {/* ── Modal Generar QR de cobro ───────────────── */}
       {qrModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <QrCode size={18} className="text-emerald-600" />
-                <h3 className="font-semibold text-slate-800">Generar QR</h3>
+                <h3 className="font-semibold text-slate-800">Generar cobro QR</h3>
               </div>
               <button
-                onClick={() => { setQrModal(false); setQrText(''); setQrLabel('') }}
+                onClick={() => { setQrModal(false); setQrAmount(''); setQrDesc(''); setQrBank('bmsc') }}
                 className="text-slate-400 hover:text-slate-600"
               >
                 <X size={18} />
@@ -352,28 +390,43 @@ export default function Inbox() {
             </div>
             <form onSubmit={sendQR} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-slate-600">Contenido del QR *</label>
+                <label className="text-sm font-medium text-slate-600">Monto (BOB) *</label>
                 <input
                   autoFocus
-                  value={qrText}
-                  onChange={(e) => setQrText(e.target.value)}
-                  placeholder="ej: https://pay.example.com/ref/12345"
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={qrAmount}
+                  onChange={(e) => setQrAmount(e.target.value)}
+                  placeholder="ej: 250.00"
                   className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-400"
                   required
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-slate-600">Etiqueta (opcional)</label>
+                <label className="text-sm font-medium text-slate-600">Concepto</label>
                 <input
-                  value={qrLabel}
-                  onChange={(e) => setQrLabel(e.target.value)}
-                  placeholder="ej: Pago Bs. 150"
+                  value={qrDesc}
+                  onChange={(e) => setQrDesc(e.target.value)}
+                  placeholder="ej: Camisa casual, Consulta médica..."
                   className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-400"
                 />
               </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-600">Banco</label>
+                <select
+                  value={qrBank}
+                  onChange={(e) => setQrBank(e.target.value)}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-400"
+                >
+                  <option value="bmsc">🏦 BMSC</option>
+                  <option value="bnb">🏦 BNB</option>
+                  <option value="bisa">🏦 BISA</option>
+                </select>
+              </div>
               <button
                 type="submit"
-                disabled={!qrText.trim() || sendingQr}
+                disabled={!qrAmount || parseFloat(qrAmount) <= 0 || sendingQr}
                 className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors"
               >
                 {sendingQr ? 'Generando...' : 'Generar y enviar QR'}
@@ -382,6 +435,7 @@ export default function Inbox() {
           </div>
         </div>
       )}
+    </div>
     </div>
   )
 }

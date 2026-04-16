@@ -3,7 +3,7 @@ import api from '../lib/api'
 import { Plus, Trash2, Edit2, Check, X, Clock, Tag, Briefcase, Users } from 'lucide-react'
 
 const TABS = [
-  { id: 'services', label: 'Servicios', icon: Briefcase },
+  { id: 'services', label: 'Productos/Servicios', icon: Briefcase },
   { id: 'schedule', label: 'Horarios', icon: Clock },
   { id: 'agents', label: 'Agentes', icon: Users },
   { id: 'tags', label: 'Etiquetas', icon: Tag },
@@ -23,17 +23,18 @@ function ServicesTab() {
     setServices(res.data || [])
   }
 
-  const openNew = () => setForm({ name: '', duration_minutes: 60, price: '', emoji: '✂️', requires_advance_payment: false, advance_payment_amount: '' })
+  const openNew = () => setForm({ name: '', category: '', price: '', emoji: '🛍️', requires_advance_payment: false, advance_payment_amount: '', sort_order: 0 })
   const openEdit = (s) => setForm({ ...s })
 
   const save = async () => {
     const body = {
       name: form.name,
-      duration_minutes: Number(form.duration_minutes),
-      price: Number(form.price),
+      category: form.category || null,
+      price: form.price !== '' ? Number(form.price) : null,
       emoji: form.emoji,
       requires_advance_payment: form.requires_advance_payment,
       advance_payment_amount: form.requires_advance_payment ? Number(form.advance_payment_amount) : null,
+      sort_order: Number(form.sort_order) || 0,
     }
     if (form.id) await api.put(`/crm/services/${form.id}`, body)
     else await api.post('/crm/services', body)
@@ -66,18 +67,25 @@ function ServicesTab() {
                 className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Nombre</label>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Nombre *</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Duración (min)</label>
-              <input type="number" value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: e.target.value })}
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Categoría</label>
+              <input value={form.category || ''} onChange={(e) => setForm({ ...form, category: e.target.value })}
+                placeholder="ej: Ropa, Calzado, General"
                 className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Precio (BOB)</label>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Precio BOB <span className="text-slate-400">(vacío = monto libre)</span></label>
               <input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="ej: 250"
+                className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Orden en menú</label>
+              <input type="number" value={form.sort_order || 0} onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
                 className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400" />
             </div>
           </div>
@@ -104,7 +112,7 @@ function ServicesTab() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['', 'Servicio', 'Duración', 'Precio', 'Pago ant.', ''].map((h, i) => (
+              {['', 'Producto / Servicio', 'Categoría', 'Precio', 'Pago ant.', ''].map((h, i) => (
                 <th key={i} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -116,8 +124,8 @@ function ServicesTab() {
                 <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-3 text-lg">{s.emoji}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.duration_minutes} min</td>
-                  <td className="px-4 py-3 text-slate-600">BOB {parseFloat(s.price).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{s.category || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{s.price ? `BOB ${parseFloat(s.price).toFixed(2)}` : <span className="text-xs text-slate-400">Libre</span>}</td>
                   <td className="px-4 py-3">
                     {s.requires_advance_payment
                       ? <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">BOB {parseFloat(s.advance_payment_amount).toFixed(2)}</span>
