@@ -65,8 +65,9 @@ const getBusinessConfig = () => {
         {
           title: 'Atención',
           rows: [
-            { id: 'flow_handoff', title: '🧑‍💼 Hablar con asesor', description: 'Atención personalizada' },
-            { id: 'flow_faq',     title: '❓ Preguntas frecuentes', description: 'Tallas, envíos, cambios' },
+            { id: 'flow_agenda',  title: '📋 Mis pedidos y citas',  description: 'Ver, cancelar o reagendar' },
+            { id: 'flow_handoff', title: '🧑‍💼 Hablar con asesor',   description: 'Atención personalizada' },
+            { id: 'flow_faq',     title: '❓ Preguntas frecuentes',  description: 'Tallas, envíos, cambios' },
           ],
         },
       ],
@@ -91,6 +92,7 @@ const getBusinessConfig = () => {
         {
           title: 'Soporte',
           rows: [
+            { id: 'flow_agenda',  title: '📋 Mis citas',              description: 'Ver, cancelar o reagendar' },
             { id: 'flow_handoff', title: '🧑‍⚕️ Hablar con recepción', description: 'Consultas generales' },
             { id: 'flow_faq',     title: '❓ Preguntas frecuentes',    description: 'Horarios, seguros, etc.' },
           ],

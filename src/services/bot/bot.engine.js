@@ -2,6 +2,7 @@ const sessionService = require('./session.service');
 const whatsapp = require('../whatsapp/whatsapp.service');
 const MessageBuilder = require('../whatsapp/message.builder');
 const receptionist = require('../agents/receptionist.agent');
+const orchestrator = require('../agents/orchestrator.agent');
 const { Conversation } = require('../../models/index');
 const logger = require('../../config/logger');
 
@@ -10,9 +11,10 @@ const flows = {
   welcome: require('./flows/welcome.flow'),
   payment: require('./flows/payment.flow'),
   booking: require('./flows/booking.flow'),
-  status: require('./flows/status.flow'),
+  status:  require('./flows/status.flow'),
   handoff: require('./flows/handoff.flow'),
-  faq: require('./flows/faq.flow'),
+  faq:     require('./flows/faq.flow'),
+  agenda:  require('../agents/agenda.agent'),
 };
 
 const MAX_RETRIES = 3;
@@ -90,16 +92,27 @@ const process = async ({ msg, contact, conversation }) => {
     return;
   }
 
-  // ── Selección desde el menú principal ─────────────────
+  // ── Orquestador: detección de intención desde texto libre ─
   if (session.currentFlow === 'menu' && session.currentStep === 'waiting_selection') {
+    // Primero intentar mapeo directo del menú
     const flowMap = {
       flow_payment: 'payment',
       flow_status:  'status',
       flow_handoff: 'handoff',
       flow_faq:     'faq',
       flow_booking: 'booking',
+      flow_agenda:  'agenda',
     };
-    const selectedFlow = flowMap[input];
+    let selectedFlow = flowMap[input];
+
+    // Si no hay match directo, usar el Orquestador para detectar intención
+    if (!selectedFlow) {
+      const detectedFlow = orchestrator.routeIntent(input, session);
+      if (detectedFlow) {
+        logger.info(`[Orquestador] Intención detectada: "${input}" → ${detectedFlow}`);
+        selectedFlow = detectedFlow;
+      }
+    }
 
     if (selectedFlow) {
       await sessionService.updateSession(conversation.id, {
