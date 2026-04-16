@@ -4,6 +4,7 @@ const { connectDB } = require('./config/database');
 const { connectRedis } = require('./config/redis');
 const { startReminderJobs } = require('./services/bot/reminder.service');
 const { startQRPolling }   = require('./services/payment/qr-polling.service');
+const { startWatchdog }    = require('./services/agents/watchdog.agent');
 const logger = require('./config/logger');
 
 // Exponer io globalmente para uso en callbacks (payment.callback.controller)
@@ -27,6 +28,9 @@ const start = async () => {
 
     // Polling de estado de QRs contra PayCenter (cada 10s, sin necesitar su webhook)
     startQRPolling(io);
+
+    // Agente Watchdog: monitoreo de servicios cada 30s
+    startWatchdog(io);
 
     // Servidor HTTP + Socket.io
     httpServer.listen(PORT, () => {

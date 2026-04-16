@@ -1,6 +1,7 @@
 const sessionService = require('./session.service');
 const whatsapp = require('../whatsapp/whatsapp.service');
 const MessageBuilder = require('../whatsapp/message.builder');
+const receptionist = require('../agents/receptionist.agent');
 const { Conversation } = require('../../models/index');
 const logger = require('../../config/logger');
 
@@ -79,12 +80,12 @@ const process = async ({ msg, contact, conversation }) => {
   // ── Trigger de menú principal ──────────────────────────
   if (isMenuTrigger(input) || !session.currentFlow) {
     await sessionService.resetSession(conversation.id);
-    // Enviar saludo + menú
-    const welcome = MessageBuilder.welcome(phone, contact.name);
-    await sendBuilderMessage(welcome);
-    await new Promise((r) => setTimeout(r, 800)); // pequeña pausa natural
-    const menu = MessageBuilder.mainMenu(phone);
-    await sendBuilderMessage(menu);
+    // Agente Recepcionista: saludo + menú adaptado al negocio
+    const messages = receptionist.greet(phone, contact.name);
+    for (const m of messages) {
+      await sendBuilderMessage(m);
+      if (messages.length > 1) await new Promise((r) => setTimeout(r, 700));
+    }
     await sessionService.updateSession(conversation.id, { currentFlow: 'menu', currentStep: 'waiting_selection' });
     return;
   }
