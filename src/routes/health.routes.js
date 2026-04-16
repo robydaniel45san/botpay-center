@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { sequelize } = require('../config/database');
 const { getRedis } = require('../config/redis');
+const { getMetrics } = require('../services/payment/qr-polling.service');
 
 const router = Router();
 
@@ -30,6 +31,7 @@ router.get('/', async (req, res) => {
     version: '1.0.0',
     timestamp: new Date().toISOString(),
     checks,
+    metrics: getMetrics(),
   });
 });
 

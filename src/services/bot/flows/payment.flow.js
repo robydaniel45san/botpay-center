@@ -1,4 +1,4 @@
-const { generatePaymentQR } = require('../../paycenter/qr.service');
+const qrCreator = require('../../agents/qr-creator.agent');
 const { Service } = require('../../../models/index');
 const logger = require('../../../config/logger');
 
@@ -182,49 +182,40 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
 
     const { amount, description, bank } = session.context;
 
-    try {
-      const paymentRequest = await generatePaymentQR({
-        conversationId: conversation.id,
-        contactId: contact.id,
-        amount,
-        description,
-        bank,
+    const result = await qrCreator.run({
+      conversationId: conversation.id,
+      contactId:      contact.id,
+      amount,
+      description,
+      bank,
+    });
+
+    if (result.validationError) {
+      await sendBuilderMessage({
+        to: phone, method: 'sendText',
+        text: `⚠️ ${result.validationError}`,
       });
+      await sessionService.resetSession(conversation.id);
+      return;
+    }
 
-      await sendBuilderMessage(MessageBuilder.qrGenerated(phone, {
+    if (result.success) {
+      const msgs = qrCreator.buildSuccessMessages(phone, {
+        paymentRequest: result.paymentRequest,
         amount,
         description,
-        orderId: paymentRequest.paycenter_order_id,
-        expiresMinutes: 30,
-      }));
-
-      if (paymentRequest.qr_base64) {
-        await sendBuilderMessage({
-          to: phone,
-          method: 'sendImage',
-          url: `data:image/png;base64,${paymentRequest.qr_base64}`,
-          caption: `QR de cobro — BOB ${parseFloat(amount).toFixed(2)}`,
-        });
-      }
+      });
+      for (const m of msgs) await sendBuilderMessage(m);
 
       await sessionService.updateSession(conversation.id, {
         currentStep: 'waiting_payment',
-        context: { paymentRequestId: paymentRequest.id },
-        retryCount: 0,
+        context:     { paymentRequestId: result.paymentRequest.id },
+        retryCount:  0,
       });
-
-    } catch (err) {
-      logger.error('Error generando QR en PayCenter:', err.message);
+    } else {
+      logger.error(`[PaymentFlow] QR fallido tras ${result.attempts} intentos: ${result.error}`);
       await sessionService.resetSession(conversation.id);
-      await sendBuilderMessage({
-        to: phone,
-        method: 'sendButtons',
-        body: '❌ No se pudo generar el QR. Por favor intentá nuevamente o contactá a soporte.',
-        buttons: [
-          { id: 'flow_payment', title: '🔄 Intentar de nuevo' },
-          { id: 'flow_handoff', title: '🧑‍💼 Hablar con agente' },
-        ],
-      });
+      await sendBuilderMessage(qrCreator.buildErrorMessage(phone, result));
     }
     return;
   }
