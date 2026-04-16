@@ -1,0 +1,111 @@
+version: "3.9"
+
+services:
+
+  # ── API Node.js ──────────────────────────────────────
+  botpay-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: botpay-api
+    restart: unless-stopped
+    expose:
+      - "4000"
+    env_file: .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 4000
+      DB_HOST: botpay-postgres
+      DB_PORT: 5432
+      REDIS_HOST: botpay-redis
+      REDIS_PORT: 6379
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4080}
+    depends_on:
+      botpay-postgres:
+        condition: service_healthy
+      botpay-redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - botpay-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Frontend React ───────────────────────────────────
+  botpay-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: botpay-frontend
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - botpay-network
+
+  # ── PostgreSQL 15 ────────────────────────────────────
+  botpay-postgres:
+    image: postgres:15-alpine
+    container_name: botpay-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT_EXPOSE:-5434}:5432"
+    volumes:
+      - botpay-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - botpay-network
+
+  # ── Redis 7 ──────────────────────────────────────────
+  botpay-redis:
+    image: redis:7-alpine
+    container_name: botpay-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "${REDIS_PORT_EXPOSE:-6380}:6379"
+    volumes:
+      - botpay-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - botpay-network
+
+  # ── Nginx reverse proxy ──────────────────────────────
+  botpay-nginx:
+    image: nginx:alpine
+    container_name: botpay-nginx
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-4080}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - botpay-api
+      - botpay-frontend
+    networks:
+      - botpay-network
+
+volumes:
+  botpay-pgdata:
+  botpay-redisdata:
+
+networks:
+  botpay-network:
+    driver: bridge
