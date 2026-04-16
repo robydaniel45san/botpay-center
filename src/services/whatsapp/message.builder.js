@@ -50,13 +50,66 @@ const MessageBuilder = {
     };
   },
 
-  // ── Confirmación de monto (botones) ─────────────────
+  // ── Catálogo de productos (lista interactiva) ────────
+  productCatalog(to, products) {
+    // Agrupar por categoría
+    const grouped = {};
+    for (const p of products) {
+      const cat = p.category || 'Productos';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(p);
+    }
+
+    const sections = Object.entries(grouped).map(([category, items]) => ({
+      title: category,
+      rows: items.map((p) => {
+        const priceLabel = p.price
+          ? `BOB ${parseFloat(p.price).toFixed(2)}`
+          : 'Monto libre';
+        const advanceLabel = p.requires_advance_payment && p.advance_payment_amount
+          ? ` (anticipo BOB ${parseFloat(p.advance_payment_amount).toFixed(2)})`
+          : '';
+        return {
+          id: p.price === null && p.name.toLowerCase().includes('otro') ? 'prod_free' : `prod_${p.id}`,
+          title: `${p.emoji || ''} ${p.name}`.trim(),
+          description: `${priceLabel}${advanceLabel}`,
+        };
+      }),
+    }));
+
+    return {
+      to,
+      method: 'sendList',
+      body: '🛍️ Seleccioná el producto o servicio:',
+      header: 'Catálogo',
+      footer: 'Elegí uno para generar el QR de cobro',
+      buttonText: 'Ver productos',
+      sections,
+    };
+  },
+
+  // ── Confirmación de cobro con descripción (botones) ──
+  confirmPayment(to, { amount, description, currency = 'BOB' }) {
+    return {
+      to,
+      method: 'sendButtons',
+      header: 'Confirmar cobro',
+      body: `¿Confirmás generar un QR de cobro?\n\n🛍️ *${description}*\n💰 *${currency} ${parseFloat(amount).toFixed(2)}*`,
+      footer: 'El QR tiene validez de 30 minutos',
+      buttons: [
+        { id: 'confirm_yes', title: '✅ Confirmar' },
+        { id: 'confirm_no', title: '❌ Cancelar' },
+      ],
+    };
+  },
+
+  // ── Confirmación de monto (botones) — legacy ─────────
   confirmAmount(to, amount, currency = 'BOB') {
     return {
       to,
       method: 'sendButtons',
       header: 'Confirmar cobro',
-      body: `¿Confirmas generar un QR de cobro por:\n\n💰 *${currency} ${parseFloat(amount).toFixed(2)}*?`,
+      body: `¿Confirmás generar un QR de cobro por:\n\n💰 *${currency} ${parseFloat(amount).toFixed(2)}*?`,
       footer: 'El QR tiene validez de 30 minutos',
       buttons: [
         { id: 'confirm_yes', title: '✅ Confirmar' },
@@ -81,11 +134,12 @@ const MessageBuilder = {
   },
 
   // ── QR generado ──────────────────────────────────────
-  qrGenerated(to, { amount, currency = 'BOB', orderId, expiresMinutes = 30 }) {
+  qrGenerated(to, { amount, description, currency = 'BOB', orderId, expiresMinutes = 30 }) {
+    const descLine = description ? `🛍️ Concepto: *${description}*\n` : '';
     return {
       to,
       method: 'sendText',
-      text: `✅ *QR generado exitosamente*\n\n💰 Monto: *${currency} ${parseFloat(amount).toFixed(2)}*\n🔖 Referencia: \`${orderId}\`\n⏱ Válido por: *${expiresMinutes} minutos*\n\n📲 Muestra el QR al cliente para que realice el pago.`,
+      text: `✅ *QR generado exitosamente*\n\n${descLine}💰 Monto: *${currency} ${parseFloat(amount).toFixed(2)}*\n🔖 Referencia: \`${orderId}\`\n⏱ Válido por: *${expiresMinutes} minutos*\n\n📲 Mostrá el QR al cliente para que realice el pago.`,
     };
   },
 

@@ -1,26 +1,115 @@
-const { generatePaymentQR } = require('../../paycenter/qr.service'); // → usa paycenter.adapter internamente
+const { generatePaymentQR } = require('../../paycenter/qr.service');
+const { Service } = require('../../../models/index');
 const logger = require('../../../config/logger');
 
 /**
- * Flujo de cobro QR directo.
- * Pasos: start → waiting_amount → waiting_bank → confirm → generating → done
+ * Flujo de cobro QR con catálogo de productos/servicios.
+ * Pasos: start → waiting_product → (waiting_amount) → waiting_bank → confirming → generating → done
+ *
+ * Si el producto tiene precio fijo → salta directo a waiting_bank.
+ * Si el producto es "monto libre" (price null) → pasa por waiting_amount.
  */
 const handle = async ({ msg, input, contact, conversation, session, sessionService, sendBuilderMessage, MessageBuilder }) => {
   const phone = contact.phone;
   const step = session.currentStep;
 
-  // ── INICIO: solicitar monto ───────────────────────────
+  // ── INICIO: mostrar catálogo ──────────────────────────
   if (step === 'start') {
-    await sendBuilderMessage({
-      to: phone,
-      method: 'sendText',
-      text: '💳 *Nuevo cobro QR*\n\n¿Cuál es el monto a cobrar?\n\n_Escribe solo el número. Ej: 150 o 250.50_',
+    const products = await Service.findAll({
+      where: { status: 'active' },
+      order: [['sort_order', 'ASC']],
     });
-    await sessionService.updateSession(conversation.id, { currentStep: 'waiting_amount' });
+
+    if (!products.length) {
+      // No hay productos cargados → flujo manual de monto
+      await sendBuilderMessage({
+        to: phone,
+        method: 'sendText',
+        text: '💳 *Nuevo cobro QR*\n\n¿Cuál es el monto a cobrar?\n\n_Escribe solo el número. Ej: 150 o 250.50_',
+      });
+      await sessionService.updateSession(conversation.id, { currentStep: 'waiting_amount' });
+      return;
+    }
+
+    await sendBuilderMessage(MessageBuilder.productCatalog(phone, products));
+    await sessionService.updateSession(conversation.id, { currentStep: 'waiting_product' });
     return;
   }
 
-  // ── ESPERANDO MONTO ───────────────────────────────────
+  // ── ESPERANDO SELECCIÓN DE PRODUCTO ──────────────────
+  if (step === 'waiting_product') {
+    // El id del botón viene como "prod_<id>" o "prod_free"
+    if (!input.startsWith('prod_')) {
+      await sessionService.incrementRetry(conversation.id);
+      await sendBuilderMessage({
+        to: phone,
+        method: 'sendText',
+        text: '⚠️ Por favor seleccioná un producto de la lista.',
+      });
+      return;
+    }
+
+    if (input === 'prod_free') {
+      // Monto libre
+      await sendBuilderMessage({
+        to: phone,
+        method: 'sendText',
+        text: '💳 Ingresá el monto a cobrar:\n\n_Solo el número. Ej: 150 o 250.50_',
+      });
+      await sessionService.updateSession(conversation.id, {
+        currentStep: 'waiting_amount',
+        context: { description: 'Cobro manual' },
+        retryCount: 0,
+      });
+      return;
+    }
+
+    const productId = input.replace('prod_', '');
+    const product = await Service.findByPk(productId);
+
+    if (!product) {
+      await sessionService.incrementRetry(conversation.id);
+      await sendBuilderMessage({
+        to: phone,
+        method: 'sendText',
+        text: '⚠️ Producto no encontrado. Escribí *menú* para volver.',
+      });
+      return;
+    }
+
+    const description = product.name;
+    const amount = product.requires_advance_payment && product.advance_payment_amount
+      ? parseFloat(product.advance_payment_amount)
+      : product.price
+        ? parseFloat(product.price)
+        : null;
+
+    if (!amount) {
+      // Producto sin precio configurado → pedir monto
+      await sendBuilderMessage({
+        to: phone,
+        method: 'sendText',
+        text: `💳 *${product.name}*\n\n¿Cuál es el monto a cobrar?\n\n_Escribe solo el número. Ej: 150 o 250.50_`,
+      });
+      await sessionService.updateSession(conversation.id, {
+        currentStep: 'waiting_amount',
+        context: { description },
+        retryCount: 0,
+      });
+      return;
+    }
+
+    // Producto con precio fijo → ir directo a banco
+    await sessionService.updateSession(conversation.id, {
+      currentStep: 'waiting_bank',
+      context: { amount, description },
+      retryCount: 0,
+    });
+    await sendBuilderMessage(MessageBuilder.selectBank(phone));
+    return;
+  }
+
+  // ── ESPERANDO MONTO MANUAL ────────────────────────────
   if (step === 'waiting_amount') {
     const amount = parseFloat(input.replace(',', '.'));
     if (isNaN(amount) || amount <= 0 || amount > 99999) {
@@ -28,35 +117,17 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
       await sendBuilderMessage({
         to: phone,
         method: 'sendText',
-        text: '⚠️ Monto inválido. Ingresa un número válido mayor a 0.\n\n_Ej: 150 o 250.50_',
+        text: '⚠️ Monto inválido. Ingresá un número mayor a 0.\n\n_Ej: 150 o 250.50_',
       });
       return;
     }
 
-    await sessionService.updateSession(conversation.id, {
-      currentStep: 'waiting_description',
-      context: { amount },
-      retryCount: 0,
-    });
-
-    await sendBuilderMessage({
-      to: phone,
-      method: 'sendText',
-      text: `✅ Monto: *BOB ${amount.toFixed(2)}*\n\n¿Cuál es el concepto del cobro?\n\n_Ej: Consulta médica, Corte de cabello, Pago cuota_\n_(Escribe "saltar" si no quieres agregar descripción)_`,
-    });
-    return;
-  }
-
-  // ── ESPERANDO DESCRIPCIÓN ─────────────────────────────
-  if (step === 'waiting_description') {
-    const description = input === 'saltar' ? 'Cobro generado por BotPay' : msg.text?.trim() || 'Cobro BotPay';
-
+    const description = session.context?.description || 'Cobro BotPay';
     await sessionService.updateSession(conversation.id, {
       currentStep: 'waiting_bank',
-      context: { description },
+      context: { amount, description },
       retryCount: 0,
     });
-
     await sendBuilderMessage(MessageBuilder.selectBank(phone));
     return;
   }
@@ -79,7 +150,7 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
       retryCount: 0,
     });
 
-    await sendBuilderMessage(MessageBuilder.confirmAmount(phone, amount));
+    await sendBuilderMessage(MessageBuilder.confirmPayment(phone, { amount, description }));
     return;
   }
 
@@ -90,13 +161,14 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
       await sendBuilderMessage({
         to: phone,
         method: 'sendText',
-        text: '❌ Cobro cancelado.\n\nEscribe *menú* para ver las opciones.',
+        text: '❌ Cobro cancelado.\n\nEscribí *menú* para ver las opciones.',
       });
       return;
     }
 
     if (input !== 'confirm_yes') {
-      await sendBuilderMessage(MessageBuilder.confirmAmount(phone, session.context.amount));
+      const { amount, description } = session.context;
+      await sendBuilderMessage(MessageBuilder.confirmPayment(phone, { amount, description }));
       return;
     }
 
@@ -119,14 +191,13 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
         bank,
       });
 
-      // Enviar texto de confirmación
       await sendBuilderMessage(MessageBuilder.qrGenerated(phone, {
         amount,
+        description,
         orderId: paymentRequest.paycenter_order_id,
         expiresMinutes: 30,
       }));
 
-      // Enviar imagen QR si está disponible
       if (paymentRequest.qr_base64) {
         await sendBuilderMessage({
           to: phone,
@@ -148,7 +219,7 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
       await sendBuilderMessage({
         to: phone,
         method: 'sendButtons',
-        body: '❌ No se pudo generar el QR. Por favor intenta nuevamente o contacta a soporte.',
+        body: '❌ No se pudo generar el QR. Por favor intentá nuevamente o contactá a soporte.',
         buttons: [
           { id: 'flow_payment', title: '🔄 Intentar de nuevo' },
           { id: 'flow_handoff', title: '🧑‍💼 Hablar con agente' },
@@ -158,14 +229,12 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
     return;
   }
 
-  // ── ESPERANDO PAGO (push desde PayCenter) ─────────────
+  // ── ESPERANDO PAGO ────────────────────────────────────
   if (step === 'waiting_payment') {
-    // En este paso el bot espera el callback de PayCenter.
-    // Si el cliente escribe algo, le recordamos que espere.
     await sendBuilderMessage({
       to: phone,
       method: 'sendButtons',
-      body: '⏳ Estamos esperando la confirmación de tu pago.\n\n¿Deseas hacer algo mientras tanto?',
+      body: '⏳ Estamos esperando la confirmación de tu pago.\n\n¿Deseás hacer algo mientras tanto?',
       buttons: [
         { id: 'flow_status', title: '🔍 Ver estado del cobro' },
         { id: 'flow_menu', title: '📋 Menú principal' },

@@ -1,0 +1,66 @@
+{
+  "business": {
+    "name": "Tienda Ejemplo",
+    "type": "ropa",
+    "currency": "BOB",
+    "default_bank": "bmsc"
+  },
+  "products": [
+    {
+      "name": "Camisa casual",
+      "description": "Camisa de algodón talla M/L/XL",
+      "price": 250.00,
+      "currency_code": "BOB",
+      "category": "Ropa",
+      "emoji": "👔",
+      "status": "active",
+      "sort_order": 1,
+      "requires_advance_payment": false
+    },
+    {
+      "name": "Pantalón jeans",
+      "description": "Jean clásico corte recto",
+      "price": 350.00,
+      "currency_code": "BOB",
+      "category": "Ropa",
+      "emoji": "👖",
+      "status": "active",
+      "sort_order": 2,
+      "requires_advance_payment": false
+    },
+    {
+      "name": "Zapatillas deportivas",
+      "description": "Tallas 38 al 44",
+      "price": 480.00,
+      "currency_code": "BOB",
+      "category": "Calzado",
+      "emoji": "👟",
+      "status": "active",
+      "sort_order": 3,
+      "requires_advance_payment": false
+    },
+    {
+      "name": "Vestido de noche",
+      "description": "Disponible en varios colores",
+      "price": 550.00,
+      "currency_code": "BOB",
+      "category": "Ropa",
+      "emoji": "👗",
+      "status": "active",
+      "sort_order": 4,
+      "requires_advance_payment": true,
+      "advance_payment_amount": 150.00
+    },
+    {
+      "name": "Otro monto",
+      "description": "Ingresá el monto manualmente",
+      "price": null,
+      "currency_code": "BOB",
+      "category": "General",
+      "emoji": "💰",
+      "status": "active",
+      "sort_order": 99,
+      "requires_advance_payment": false
+    }
+  ]
+}
