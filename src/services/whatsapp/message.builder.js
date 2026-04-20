@@ -236,6 +236,44 @@ const MessageBuilder = {
     };
   },
 
+  // ── Menú tipo de servicio (lista) ───────────────────
+  serviceTypeMenu(to) {
+    return {
+      to,
+      method: 'sendList',
+      body: '¿Qué servicio deseas pagar?',
+      header: 'Tipo de Servicio',
+      footer: 'Seleccioná el servicio',
+      buttonText: 'Ver servicios',
+      sections: [
+        {
+          title: 'Servicios básicos',
+          rows: [
+            { id: 'svc_electricidad', title: '⚡ Electricidad',        description: 'Pago de energía eléctrica' },
+            { id: 'svc_agua',         title: '💧 Agua',               description: 'Pago de agua potable' },
+            { id: 'svc_internet',     title: '📡 Internet / Telefonía', description: 'Internet y telefonía' },
+            { id: 'svc_otros',        title: '📋 Otros',              description: 'Otros servicios' },
+          ],
+        },
+      ],
+    };
+  },
+
+  // ── Acción post selección de banco (botones) ─────────
+  serviceActionMenu(to, { service, bank }) {
+    const bankLabel = { bmsc: 'BMSC', bnb: 'BNB', bisa: 'BISA' }[bank] || bank.toUpperCase();
+    return {
+      to,
+      method: 'sendButtons',
+      body: `✅ *${service}* · Banco *${bankLabel}*\n\n¿Qué deseas hacer?`,
+      footer: 'Elige una opción',
+      buttons: [
+        { id: 'svc_action_qr',     title: '💳 Generar QR de pago' },
+        { id: 'svc_action_status', title: '🔍 Ver mis QR' },
+      ],
+    };
+  },
+
   // ── FAQ básico (lista) ───────────────────────────────
   faqMenu(to) {
     return {

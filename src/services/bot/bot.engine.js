@@ -6,9 +6,25 @@ const orchestrator = require('../agents/orchestrator.agent');
 const { Conversation } = require('../../models/index');
 const logger = require('../../config/logger');
 
+// Deduplicación: evita procesar el mismo mensaje dos veces (Meta puede enviar duplicados)
+const _processedIds = new Map(); // waMessageId → timestamp
+const DEDUP_TTL = 60_000; // 1 minuto
+const _isDuplicate = (waId) => {
+  if (!waId) return false;
+  const now = Date.now();
+  // Limpiar entradas viejas
+  for (const [id, ts] of _processedIds) {
+    if (now - ts > DEDUP_TTL) _processedIds.delete(id);
+  }
+  if (_processedIds.has(waId)) return true;
+  _processedIds.set(waId, now);
+  return false;
+};
+
 // Flujos — se cargan aquí para evitar dependencias circulares
 const flows = {
   welcome: require('./flows/welcome.flow'),
+  service: require('./flows/service.flow'),
   payment: require('./flows/payment.flow'),
   booking: require('./flows/booking.flow'),
   status:  require('./flows/status.flow'),
@@ -57,6 +73,12 @@ const isMenuTrigger = (input) =>
  * Recibe el mensaje normalizado + contexto y delega al flujo correcto.
  */
 const process = async ({ msg, contact, conversation }) => {
+  // ── Deduplicación: descartar mensajes repetidos de Meta ─
+  if (_isDuplicate(msg.id)) {
+    logger.debug(`[BotEngine] Mensaje duplicado ignorado: ${msg.id}`);
+    return;
+  }
+
   const phone = msg.from;
   const input = normalizeInput(msg);
 
@@ -69,6 +91,22 @@ const process = async ({ msg, contact, conversation }) => {
       currentStep: null,
       context: {},
     });
+  }
+
+  // ── Timeout de sesión: resetear si lleva más de 30 min inactiva ─
+  if (session.lastInteractionAt) {
+    const elapsed = Date.now() - new Date(session.lastInteractionAt).getTime();
+    if (elapsed > sessionService.SESSION_TIMEOUT && session.currentFlow && session.currentFlow !== 'menu') {
+      logger.info(`[BotEngine] Sesión expirada (${Math.round(elapsed / 60000)}min) — reseteando`);
+      await sessionService.resetSession(conversation.id);
+      session = await sessionService.getSession(conversation.id);
+      await sendBuilderMessage({
+        to: phone,
+        method: 'sendText',
+        text: '⏰ Tu sesión expiró por inactividad. Escribí *menú* para empezar de nuevo.',
+      });
+      return;
+    }
   }
 
   // ── Control de reintentos ──────────────────────────────
@@ -96,6 +134,7 @@ const process = async ({ msg, contact, conversation }) => {
   if (session.currentFlow === 'menu' && session.currentStep === 'waiting_selection') {
     // Primero intentar mapeo directo del menú
     const flowMap = {
+      flow_service: 'service',
       flow_payment: 'payment',
       flow_status:  'status',
       flow_handoff: 'handoff',

@@ -1,115 +1,29 @@
 const qrCreator = require('../../agents/qr-creator.agent');
-const { Service } = require('../../../models/index');
 const logger = require('../../../config/logger');
 
 /**
- * Flujo de cobro QR con catálogo de productos/servicios.
- * Pasos: start → waiting_product → (waiting_amount) → waiting_bank → confirming → generating → done
+ * Flujo de cobro QR simplificado.
+ * Pasos: start → waiting_amount → waiting_bank → confirming → generating → waiting_payment
  *
- * Si el producto tiene precio fijo → salta directo a waiting_bank.
- * Si el producto es "monto libre" (price null) → pasa por waiting_amount.
+ * El catálogo de productos lo gestiona PayCenter directamente.
  */
 const handle = async ({ msg, input, contact, conversation, session, sessionService, sendBuilderMessage, MessageBuilder }) => {
   const phone = contact.phone;
   const step = session.currentStep;
 
-  // ── INICIO: mostrar catálogo ──────────────────────────
+  // ── INICIO: pedir monto ───────────────────────────────
   if (step === 'start') {
-    const products = await Service.findAll({
-      where: { status: 'active' },
-      order: [['sort_order', 'ASC']],
+    const serviceDesc = session.context?.description ? ` — *${session.context.description}*` : '';
+    await sendBuilderMessage({
+      to: phone,
+      method: 'sendText',
+      text: `💳 *Nuevo cobro QR*${serviceDesc}\n\n¿Cuál es el monto a cobrar?\n\n_Escribe solo el número. Ej: 150 o 250.50_`,
     });
-
-    if (!products.length) {
-      // No hay productos cargados → flujo manual de monto
-      await sendBuilderMessage({
-        to: phone,
-        method: 'sendText',
-        text: '💳 *Nuevo cobro QR*\n\n¿Cuál es el monto a cobrar?\n\n_Escribe solo el número. Ej: 150 o 250.50_',
-      });
-      await sessionService.updateSession(conversation.id, { currentStep: 'waiting_amount' });
-      return;
-    }
-
-    await sendBuilderMessage(MessageBuilder.productCatalog(phone, products));
-    await sessionService.updateSession(conversation.id, { currentStep: 'waiting_product' });
+    await sessionService.updateSession(conversation.id, { currentStep: 'waiting_amount' });
     return;
   }
 
-  // ── ESPERANDO SELECCIÓN DE PRODUCTO ──────────────────
-  if (step === 'waiting_product') {
-    // El id del botón viene como "prod_<id>" o "prod_free"
-    if (!input.startsWith('prod_')) {
-      await sessionService.incrementRetry(conversation.id);
-      await sendBuilderMessage({
-        to: phone,
-        method: 'sendText',
-        text: '⚠️ Por favor seleccioná un producto de la lista.',
-      });
-      return;
-    }
-
-    if (input === 'prod_free') {
-      // Monto libre
-      await sendBuilderMessage({
-        to: phone,
-        method: 'sendText',
-        text: '💳 Ingresá el monto a cobrar:\n\n_Solo el número. Ej: 150 o 250.50_',
-      });
-      await sessionService.updateSession(conversation.id, {
-        currentStep: 'waiting_amount',
-        context: { description: 'Cobro manual' },
-        retryCount: 0,
-      });
-      return;
-    }
-
-    const productId = input.replace('prod_', '');
-    const product = await Service.findByPk(productId);
-
-    if (!product) {
-      await sessionService.incrementRetry(conversation.id);
-      await sendBuilderMessage({
-        to: phone,
-        method: 'sendText',
-        text: '⚠️ Producto no encontrado. Escribí *menú* para volver.',
-      });
-      return;
-    }
-
-    const description = product.name;
-    const amount = product.requires_advance_payment && product.advance_payment_amount
-      ? parseFloat(product.advance_payment_amount)
-      : product.price
-        ? parseFloat(product.price)
-        : null;
-
-    if (!amount) {
-      // Producto sin precio configurado → pedir monto
-      await sendBuilderMessage({
-        to: phone,
-        method: 'sendText',
-        text: `💳 *${product.name}*\n\n¿Cuál es el monto a cobrar?\n\n_Escribe solo el número. Ej: 150 o 250.50_`,
-      });
-      await sessionService.updateSession(conversation.id, {
-        currentStep: 'waiting_amount',
-        context: { description },
-        retryCount: 0,
-      });
-      return;
-    }
-
-    // Producto con precio fijo → ir directo a banco
-    await sessionService.updateSession(conversation.id, {
-      currentStep: 'waiting_bank',
-      context: { amount, description },
-      retryCount: 0,
-    });
-    await sendBuilderMessage(MessageBuilder.selectBank(phone));
-    return;
-  }
-
-  // ── ESPERANDO MONTO MANUAL ────────────────────────────
+  // ── ESPERANDO MONTO ───────────────────────────────────
   if (step === 'waiting_amount') {
     const amount = parseFloat(input.replace(',', '.'));
     if (isNaN(amount) || amount <= 0 || amount > 99999) {
@@ -122,13 +36,25 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
       return;
     }
 
-    const description = session.context?.description || 'Cobro BotPay';
-    await sessionService.updateSession(conversation.id, {
-      currentStep: 'waiting_bank',
-      context: { amount, description },
-      retryCount: 0,
-    });
-    await sendBuilderMessage(MessageBuilder.selectBank(phone));
+    // Si el banco ya viene pre-seleccionado (desde service.flow), saltar selección
+    const prefilledBank = session.context?.bank;
+    const description   = session.context?.description || 'Cobro QR';
+
+    if (prefilledBank) {
+      await sessionService.updateSession(conversation.id, {
+        currentStep: 'confirming',
+        context:     { amount, description, bank: prefilledBank },
+        retryCount:  0,
+      });
+      await sendBuilderMessage(MessageBuilder.confirmPayment(phone, { amount, description }));
+    } else {
+      await sessionService.updateSession(conversation.id, {
+        currentStep: 'waiting_bank',
+        context:     { amount, description },
+        retryCount:  0,
+      });
+      await sendBuilderMessage(MessageBuilder.selectBank(phone));
+    }
     return;
   }
 
@@ -146,10 +72,9 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
     const { amount, description } = session.context;
     await sessionService.updateSession(conversation.id, {
       currentStep: 'confirming',
-      context: { bank },
+      context: { amount, description, bank },
       retryCount: 0,
     });
-
     await sendBuilderMessage(MessageBuilder.confirmPayment(phone, { amount, description }));
     return;
   }
@@ -228,7 +153,7 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
       body: '⏳ Estamos esperando la confirmación de tu pago.\n\n¿Deseás hacer algo mientras tanto?',
       buttons: [
         { id: 'flow_status', title: '🔍 Ver estado del cobro' },
-        { id: 'flow_menu', title: '📋 Menú principal' },
+        { id: 'flow_menu',   title: '📋 Menú principal' },
       ],
     });
   }

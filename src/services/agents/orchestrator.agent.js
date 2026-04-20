@@ -22,6 +22,15 @@
  */
 const INTENT_MAP = [
   {
+    flow: 'service',
+    keywords: [
+      'electricidad', 'luz', 'ande', 'corriente',
+      'agua', 'saguapac', 'semapa',
+      'internet', 'telefonía', 'telefonia', 'entel', 'tigo', 'viva',
+      'pagar servicio', 'pago de servicio', 'servicio basico', 'servicio básico',
+    ],
+  },
+  {
     flow: 'payment',
     keywords: [
       'cobrar', 'cobro', 'pagar', 'pago', 'qr', 'transferir', 'transferencia',
@@ -123,6 +132,7 @@ const routeIntent = (input, session) => {
  */
 const buildIntentConfirm = (to, flow, originalInput) => {
   const labels = {
+    service:  '🏠 Pagar un servicio (Electricidad, Agua, Internet...)',
     payment:  '💳 Generar un cobro QR',
     booking:  '📅 Agendar una cita',
     agenda:   '📋 Ver o gestionar tus citas',

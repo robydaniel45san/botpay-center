@@ -50,157 +50,40 @@ const isWithinBusinessHours = () => {
  * Retorna la configuración del negocio según el tipo.
  */
 const getBusinessConfig = () => {
+  const menuSections = [
+    {
+      title: 'Servicios',
+      rows: [
+        { id: 'flow_service', title: '🏠 Pagar un servicio',  description: 'Electricidad, Agua, Internet...' },
+        { id: 'flow_payment', title: '💳 Cobro QR directo',   description: 'Crear QR sin selección de servicio' },
+        { id: 'flow_status',  title: '📊 Estado de cuenta',   description: 'Ver cobros y pagos recibidos' },
+      ],
+    },
+  ];
+
+  const greetingByType = {
+    pagos:      `Hola! Soy el asistente de cobros de *${BUSINESS_NAME}* 💳\n\nTe ayudo a generar QR de cobro al instante o consultar el estado de tus pagos.`,
+    ropa:       `Bienvenido a *${BUSINESS_NAME}* 👗\n\nSomos tu tienda de ropa favorita. ¿En qué te podemos ayudar?`,
+    salud:      `Bienvenido a *${BUSINESS_NAME}* 🏥\n\nEstamos para cuidar tu salud. ¿Cómo podemos ayudarte?`,
+    comida:     `Bienvenido a *${BUSINESS_NAME}* 🍽️\n\n¡Hola! ¿Querés hacer un pedido o consultar tu cuenta?`,
+    belleza:    `Bienvenido a *${BUSINESS_NAME}* 💅\n\n¡Hola! ¿Querés generar un pago o consultar tu cuenta?`,
+    tecnologia: `Bienvenido a *${BUSINESS_NAME}* 💻\n\n¡Hola! ¿En qué te podemos ayudar?`,
+    general:    `Bienvenido a *${BUSINESS_NAME}* 👋\n\nSoy tu asistente virtual. ¿En qué te puedo ayudar?`,
+  };
+
+  const emojiByType = {
+    pagos: '💳', ropa: '👔', salud: '🏥', comida: '🍽️', belleza: '💅', tecnologia: '💻', general: '🏢',
+  };
+
   const configs = {
-    ropa: {
-      emoji: '👔',
-      greeting: `Bienvenido a *${BUSINESS_NAME}* 👗\n\nSomos tu tienda de ropa favorita. ¿En qué te podemos ayudar hoy?`,
-      menuSections: [
-        {
-          title: 'Compras',
-          rows: [
-            { id: 'flow_payment', title: '🛍️ Ver catálogo y comprar', description: 'Elegí tu producto' },
-            { id: 'flow_status',  title: '📦 Estado de mi pedido',   description: 'Consultar tu compra' },
-          ],
-        },
-        {
-          title: 'Atención',
-          rows: [
-            { id: 'flow_agenda',  title: '📋 Mis pedidos y citas',  description: 'Ver, cancelar o reagendar' },
-            { id: 'flow_handoff', title: '🧑‍💼 Hablar con asesor',   description: 'Atención personalizada' },
-            { id: 'flow_faq',     title: '❓ Preguntas frecuentes',  description: 'Tallas, envíos, cambios' },
-          ],
-        },
-      ],
-    },
-    salud: {
-      emoji: '🏥',
-      greeting: `Bienvenido a *${BUSINESS_NAME}* 🏥\n\nEstamos para cuidar tu salud. ¿Cómo podemos ayudarte?`,
-      menuSections: [
-        {
-          title: 'Citas',
-          rows: [
-            { id: 'flow_booking', title: '📅 Agendar consulta',    description: 'Reservá tu cita médica' },
-            { id: 'flow_status',  title: '🔍 Mis citas',           description: 'Ver o cancelar cita' },
-          ],
-        },
-        {
-          title: 'Pagos',
-          rows: [
-            { id: 'flow_payment', title: '💳 Pagar consulta',      description: 'Generar QR de pago' },
-          ],
-        },
-        {
-          title: 'Soporte',
-          rows: [
-            { id: 'flow_agenda',  title: '📋 Mis citas',              description: 'Ver, cancelar o reagendar' },
-            { id: 'flow_handoff', title: '🧑‍⚕️ Hablar con recepción', description: 'Consultas generales' },
-            { id: 'flow_faq',     title: '❓ Preguntas frecuentes',    description: 'Horarios, seguros, etc.' },
-          ],
-        },
-      ],
-    },
-    comida: {
-      emoji: '🍽️',
-      greeting: `Bienvenido a *${BUSINESS_NAME}* 🍽️\n\n¡Hola! ¿Querés hacer un pedido o reservar una mesa?`,
-      menuSections: [
-        {
-          title: 'Pedidos',
-          rows: [
-            { id: 'flow_payment', title: '🛒 Hacer un pedido',    description: 'Ver menú y pagar' },
-            { id: 'flow_status',  title: '📋 Estado de mi pedido', description: 'Consultar tu pedido' },
-          ],
-        },
-        {
-          title: 'Reservas',
-          rows: [
-            { id: 'flow_booking', title: '🪑 Reservar mesa',      description: 'Reservá tu lugar' },
-          ],
-        },
-        {
-          title: 'Soporte',
-          rows: [
-            { id: 'flow_handoff', title: '🧑‍🍳 Hablar con el local', description: 'Consultas del menú' },
-            { id: 'flow_faq',     title: '❓ Preguntas frecuentes',  description: 'Horarios, delivery, etc.' },
-          ],
-        },
-      ],
-    },
-    belleza: {
-      emoji: '💅',
-      greeting: `Bienvenido a *${BUSINESS_NAME}* 💅\n\n¡Hola! ¿Querés agendar un turno o consultar nuestros servicios?`,
-      menuSections: [
-        {
-          title: 'Turnos',
-          rows: [
-            { id: 'flow_booking', title: '📅 Agendar turno',       description: 'Reservá tu hora' },
-            { id: 'flow_status',  title: '🔍 Mis turnos',          description: 'Ver o cancelar' },
-          ],
-        },
-        {
-          title: 'Pagos',
-          rows: [
-            { id: 'flow_payment', title: '💳 Pagar servicio',      description: 'Generar QR de pago' },
-          ],
-        },
-        {
-          title: 'Soporte',
-          rows: [
-            { id: 'flow_handoff', title: '🧑‍💼 Hablar con el salón', description: 'Consultas generales' },
-            { id: 'flow_faq',     title: '❓ Preguntas frecuentes',  description: 'Servicios, precios' },
-          ],
-        },
-      ],
-    },
-    tecnologia: {
-      emoji: '💻',
-      greeting: `Bienvenido a *${BUSINESS_NAME}* 💻\n\n¡Hola! ¿En qué te podemos ayudar con tu equipo o servicio?`,
-      menuSections: [
-        {
-          title: 'Servicios',
-          rows: [
-            { id: 'flow_booking', title: '🔧 Agendar servicio técnico', description: 'Reservá tu reparación' },
-            { id: 'flow_payment', title: '💳 Pagar servicio',           description: 'Generar QR de pago' },
-          ],
-        },
-        {
-          title: 'Consultas',
-          rows: [
-            { id: 'flow_status',  title: '🔍 Estado de mi equipo',  description: 'Ver progreso' },
-            { id: 'flow_handoff', title: '🧑‍💻 Hablar con soporte',  description: 'Atención técnica' },
-            { id: 'flow_faq',     title: '❓ Preguntas frecuentes', description: 'Garantías, tiempos' },
-          ],
-        },
-      ],
-    },
-    general: {
-      emoji: '🏢',
-      greeting: `Bienvenido a *${BUSINESS_NAME}* 👋\n\nSoy tu asistente virtual. ¿En qué te puedo ayudar?`,
-      menuSections: [
-        {
-          title: 'Agenda',
-          rows: [
-            { id: 'flow_booking', title: '📅 Agendar una cita',    description: 'Reservá tu hora' },
-            { id: 'flow_status',  title: '🔍 Mis citas y cobros',  description: 'Consultar estado' },
-          ],
-        },
-        {
-          title: 'Pagos',
-          rows: [
-            { id: 'flow_payment', title: '💳 Generar cobro QR',    description: 'Cobro directo' },
-          ],
-        },
-        {
-          title: 'Soporte',
-          rows: [
-            { id: 'flow_handoff', title: '🧑‍💼 Hablar con un agente', description: 'Atención personalizada' },
-            { id: 'flow_faq',     title: '❓ Preguntas frecuentes',   description: 'Información general' },
-          ],
-        },
-      ],
+    [BUSINESS_TYPE]: {
+      emoji: emojiByType[BUSINESS_TYPE] || '🏢',
+      greeting: greetingByType[BUSINESS_TYPE] || greetingByType.general,
+      menuSections,
     },
   };
 
-  return configs[BUSINESS_TYPE] || configs.general;
+  return configs[BUSINESS_TYPE] || { emoji: '🏢', greeting: greetingByType.general, menuSections };
 };
 
 /**

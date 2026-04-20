@@ -2,7 +2,8 @@ const { getRedis } = require('../../config/redis');
 const { BotSession } = require('../../models/index');
 const logger = require('../../config/logger');
 
-const SESSION_TTL = 60 * 60 * 2; // 2 horas en segundos
+const SESSION_TTL     = 60 * 30; // 30 minutos en segundos
+const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutos en ms
 const KEY = (conversationId) => `bot:session:${conversationId}`;
 
 /**
@@ -101,4 +102,4 @@ const incrementRetry = async (conversationId) => {
   return updateSession(conversationId, { retryCount: (session.retryCount || 0) + 1 });
 };
 
-module.exports = { getSession, updateSession, resetSession, incrementRetry };
+module.exports = { getSession, updateSession, resetSession, incrementRetry, SESSION_TIMEOUT };
