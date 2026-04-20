@@ -2,19 +2,18 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSocket } from '../context/SocketContext'
 import {
-  MessageSquare, Users, CalendarDays, CreditCard,
+  MessageSquare, Users, CreditCard,
   BarChart2, Settings, LogOut, Bot
 } from 'lucide-react'
 
 const BUSINESS_NAME = import.meta.env.VITE_BUSINESS_NAME || 'BotPay'
 
 const links = [
-  { to: '/inbox',        icon: MessageSquare, label: 'Bandeja' },
-  { to: '/contacts',     icon: Users,         label: 'Contactos' },
-  { to: '/appointments', icon: CalendarDays,  label: 'Citas' },
-  { to: '/payments',     icon: CreditCard,    label: 'Pagos' },
-  { to: '/reports',      icon: BarChart2,     label: 'Reportes' },
-  { to: '/settings',     icon: Settings,      label: 'Ajustes' },
+  { to: '/inbox',    icon: MessageSquare, label: 'Bandeja' },
+  { to: '/contacts', icon: Users,         label: 'Contactos' },
+  { to: '/payments', icon: CreditCard,    label: 'Pagos' },
+  { to: '/reports',  icon: BarChart2,     label: 'Reportes' },
+  { to: '/settings', icon: Settings,      label: 'Ajustes' },
 ]
 
 export default function Sidebar() {

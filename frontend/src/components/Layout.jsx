@@ -14,9 +14,9 @@ export default function Layout() {
   if (!agent) return <Navigate to="/login" replace />
 
   return (
-    <div className="flex h-screen bg-slate-100">
+    <div className="flex h-full bg-slate-100">
       <Sidebar />
-      <main className="ml-16 flex-1 overflow-hidden">
+      <main className="ml-16 flex-1 overflow-hidden h-full">
         <Outlet />
       </main>
     </div>
