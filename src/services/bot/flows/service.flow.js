@@ -1,17 +1,27 @@
 /**
- * Flujo de pago de servicios — estilo Lukas/Multipagos.
- * Estados: start → waiting_service → waiting_bank → waiting_action
+ * service.flow.js — Selección de servicio a pagar
  *
- * El usuario elige el tipo de servicio, luego su banco, y luego si quiere
- * generar un QR de cobro o ver el estado de sus QR anteriores.
- * Al confirmar la acción, delega al flujo correspondiente (payment / status).
+ * Pasos:
+ *   start           → muestra menú de tipo de servicio
+ *   waiting_service → usuario elige el tipo
+ *                     • agua / electricidad / internet → bill-payment.flow
+ *                     • svc_otros → pide banco → payment.flow (QR genérico)
+ *   waiting_bank    → (solo svc_otros) usuario elige banco → payment.flow
  */
 
-const SERVICE_MAP = {
+const SERVICE_DISPLAY = {
   svc_electricidad: 'Electricidad',
   svc_agua:         'Agua',
   svc_internet:     'Internet / Telefonía',
   svc_otros:        'Otros servicios',
+};
+
+// Tipo interno: clave para utility.mock (null = sin facturas → QR genérico)
+const SERVICE_TYPE = {
+  svc_electricidad: 'electricidad',
+  svc_agua:         'agua',
+  svc_internet:     'internet',
+  svc_otros:        null,
 };
 
 const BANK_MAP = {
@@ -20,46 +30,63 @@ const BANK_MAP = {
   bank_bisa: 'bisa',
 };
 
-const handle = async ({ msg, input, contact, conversation, session, sessionService, sendBuilderMessage, MessageBuilder }) => {
+const handle = async ({
+  msg, input, contact, conversation,
+  session, sessionService, sendBuilderMessage, MessageBuilder,
+}) => {
   const phone = contact.phone;
   const step  = session.currentStep;
 
-  // ── INICIO: mostrar menú de servicios ─────────────────
+  // ── START — menú de servicios ─────────────────────────
   if (step === 'start') {
-    await sendBuilderMessage({
-      to:     phone,
-      method: 'sendText',
-      text:   '🏠 *Pago de Servicios*\n\nSeleccioná el servicio que deseas pagar:',
-    });
     await sendBuilderMessage(MessageBuilder.serviceTypeMenu(phone));
     await sessionService.updateSession(conversation.id, { currentStep: 'waiting_service' });
     return;
   }
 
-  // ── ESPERANDO SERVICIO ────────────────────────────────
+  // ── WAITING_SERVICE — elegir tipo ─────────────────────
   if (step === 'waiting_service') {
-    const serviceName = SERVICE_MAP[input];
-    if (!serviceName) {
+    const service     = SERVICE_DISPLAY[input];
+    const serviceType = SERVICE_TYPE[input];  // null → svc_otros
+
+    if (!service) {
       await sessionService.incrementRetry(conversation.id);
       await sendBuilderMessage(MessageBuilder.serviceTypeMenu(phone));
       return;
     }
 
+    // ── Servicios con facturación → bill-payment ────────
+    if (serviceType) {
+      await sessionService.updateSession(conversation.id, {
+        currentFlow: 'bill-payment',
+        currentStep: 'start',
+        context:     { service, serviceType },
+        retryCount:  0,
+      });
+      const updSession      = await sessionService.getSession(conversation.id);
+      const billPaymentFlow = require('./bill-payment.flow');
+      await billPaymentFlow.handle({
+        msg, input, contact, conversation,
+        session: updSession, sessionService, sendBuilderMessage, MessageBuilder,
+      });
+      return;
+    }
+
+    // ── Otros servicios → pedir banco ──────────────────
     await sessionService.updateSession(conversation.id, {
       currentStep: 'waiting_bank',
-      context:     { service: serviceName },
+      context:     { service },
       retryCount:  0,
     });
     await sendBuilderMessage({
-      to:     phone,
-      method: 'sendText',
-      text:   `✅ *${serviceName}*\n\n¿Con qué banco deseas realizar el pago?`,
+      to: phone, method: 'sendText',
+      text: `✅ *${service}*\n\n¿Con qué banco deseas generar el QR?`,
     });
     await sendBuilderMessage(MessageBuilder.selectBank(phone));
     return;
   }
 
-  // ── ESPERANDO BANCO ───────────────────────────────────
+  // ── WAITING_BANK — (solo svc_otros) elegir banco ──────
   if (step === 'waiting_bank') {
     const bank = BANK_MAP[input];
     if (!bank) {
@@ -70,49 +97,23 @@ const handle = async ({ msg, input, contact, conversation, session, sessionServi
 
     const { service } = session.context;
     await sessionService.updateSession(conversation.id, {
-      currentStep: 'waiting_action',
-      context:     { service, bank },
+      currentFlow: 'payment',
+      currentStep: 'start',
+      context:     { bank, description: service },
       retryCount:  0,
     });
-    await sendBuilderMessage(MessageBuilder.serviceActionMenu(phone, { service, bank }));
+    const updSession  = await sessionService.getSession(conversation.id);
+    const paymentFlow = require('./payment.flow');
+    await paymentFlow.handle({
+      msg, input, contact, conversation,
+      session: updSession, sessionService, sendBuilderMessage, MessageBuilder,
+    });
     return;
   }
 
-  // ── ESPERANDO ACCIÓN ──────────────────────────────────
-  if (step === 'waiting_action') {
-    const { service, bank } = session.context;
-
-    if (input === 'svc_action_qr') {
-      // Pasar al flujo de pago con banco y descripción pre-cargados
-      await sessionService.updateSession(conversation.id, {
-        currentFlow: 'payment',
-        currentStep: 'start',
-        context:     { bank, description: service },
-        retryCount:  0,
-      });
-      const updatedSession = await sessionService.getSession(conversation.id);
-      const paymentFlow = require('./payment.flow');
-      await paymentFlow.handle({ msg, input, contact, conversation, session: updatedSession, sessionService, sendBuilderMessage, MessageBuilder });
-      return;
-    }
-
-    if (input === 'svc_action_status') {
-      await sessionService.updateSession(conversation.id, {
-        currentFlow: 'status',
-        currentStep: 'start',
-        context:     {},
-        retryCount:  0,
-      });
-      const updatedSession = await sessionService.getSession(conversation.id);
-      const statusFlow = require('./status.flow');
-      await statusFlow.handle({ msg, input, contact, conversation, session: updatedSession, sessionService, sendBuilderMessage, MessageBuilder });
-      return;
-    }
-
-    // Input no reconocido
-    await sessionService.incrementRetry(conversation.id);
-    await sendBuilderMessage(MessageBuilder.serviceActionMenu(phone, { service, bank }));
-  }
+  // Fallback
+  await sessionService.resetSession(conversation.id);
+  await sendBuilderMessage(MessageBuilder.mainMenu(phone));
 };
 
 module.exports = { handle };

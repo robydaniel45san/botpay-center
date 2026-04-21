@@ -8,9 +8,10 @@
  * se reemplaza este archivo. Nada más cambia.
  */
 
-const http   = require('./paycenter.http');
-const mapper = require('./paycenter.mapper');
-const logger = require('../../config/logger');
+const http            = require('./paycenter.http');
+const mapper          = require('./paycenter.mapper');
+const logger          = require('../../config/logger');
+const { generateMockQR } = require('../../services/mock/qr.generator');
 
 const MOCK_MODE = process.env.PAYCENTER_MOCK === 'true' || process.env.NODE_ENV === 'development';
 
@@ -29,6 +30,15 @@ const createQR = async ({ bank, amount, currency, description, reference, extern
   const merchantId    = process.env.PAYCENTER_MERCHANT_ID;
   const accountNumber = _accountNumber(bank);
 
+  // ── Modo mock puro: no hay PayCenter disponible ni credenciales reales ──
+  const noCredentials = !process.env.PAYCENTER_JWT_SECRET && !process.env.JWT_SECRET;
+  if (MOCK_MODE && noCredentials) {
+    logger.warn('[PayCenterAdapter] Modo mock activo (sin credenciales) — generando QR real');
+    const mockId  = `MOCK-${Date.now()}`;
+    const qrBase64 = await generateMockQR({ reference: mockId, amount, bank, description, expiresAt });
+    return { gatewayId: mockId, orderId: mockId, qrBase64, expiresAt, status: 'pending' };
+  }
+
   if (!merchantId)    throw new Error('PAYCENTER_MERCHANT_ID no configurado en .env');
   if (!accountNumber) throw new Error(`PAYCENTER_ACCOUNT_${bank.toUpperCase()} no configurado en .env`);
 
@@ -43,15 +53,11 @@ const createQR = async ({ bank, amount, currency, description, reference, extern
   } catch (err) {
     // En modo desarrollo, devolver QR simulado si PayCenter no está disponible
     if (MOCK_MODE && (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET' || err.response?.status >= 500)) {
-      logger.warn('[PayCenterAdapter] PayCenter no disponible — usando QR mock');
-      const mockId = `MOCK-${Date.now()}`;
-      return {
-        gatewayId: mockId,
-        orderId: mockId,
-        qrBase64: 'iVBORw0KGgoAAAANSUhEUgAAAIQAAACECAYAAABRRIOnAAAAAXNSR0IArs4c6QAABKtJREFUeF7t3UFSE0EURdGMgwWwBBbAAliAS3ABLIElsAAWwBLYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLMA/gAXwH2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLMA/gAXwH2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABbAAlgAC2ABLIAFsAAWwAJYAAtgASyABbAAFsACWAALYAEsgAWwABQA=',
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        status: 'pending',
-      };
+      logger.warn('[PayCenterAdapter] PayCenter no disponible — usando QR mock (real PNG)');
+      const mockId  = `MOCK-${Date.now()}`;
+      const expires = new Date(Date.now() + (expiresMinutes || 30) * 60 * 1000).toISOString();
+      const qrBase64 = await generateMockQR({ reference: mockId, amount, bank, description, expiresAt: expires });
+      return { gatewayId: mockId, orderId: mockId, qrBase64, expiresAt: expires, status: 'pending' };
     }
     logger.error('[PayCenterAdapter] createQR falló:', err.response?.data || err.message);
     throw err;

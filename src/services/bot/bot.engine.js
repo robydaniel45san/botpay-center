@@ -23,14 +23,18 @@ const _isDuplicate = (waId) => {
 
 // Flujos — se cargan aquí para evitar dependencias circulares
 const flows = {
-  welcome: require('./flows/welcome.flow'),
-  service: require('./flows/service.flow'),
-  payment: require('./flows/payment.flow'),
-  booking: require('./flows/booking.flow'),
-  status:  require('./flows/status.flow'),
-  handoff: require('./flows/handoff.flow'),
-  faq:     require('./flows/faq.flow'),
-  agenda:  require('../agents/agenda.agent'),
+  welcome:          require('./flows/welcome.flow'),
+  service:          require('./flows/service.flow'),
+  'bill-payment':   require('./flows/bill-payment.flow'),
+  recharge:         require('./flows/recharge.flow'),
+  tax:              require('./flows/tax.flow'),
+  edu:              require('./flows/edu.flow'),
+  payment:          require('./flows/payment.flow'),
+  booking:          require('./flows/booking.flow'),
+  status:           require('./flows/status.flow'),
+  handoff:          require('./flows/handoff.flow'),
+  faq:              require('./flows/faq.flow'),
+  agenda:           require('../agents/agenda.agent'),
 };
 
 const MAX_RETRIES = 3;
@@ -134,13 +138,16 @@ const process = async ({ msg, contact, conversation }) => {
   if (session.currentFlow === 'menu' && session.currentStep === 'waiting_selection') {
     // Primero intentar mapeo directo del menú
     const flowMap = {
-      flow_service: 'service',
-      flow_payment: 'payment',
-      flow_status:  'status',
-      flow_handoff: 'handoff',
-      flow_faq:     'faq',
-      flow_booking: 'booking',
-      flow_agenda:  'agenda',
+      flow_service:  'service',
+      flow_recharge: 'recharge',
+      flow_tax:      'tax',
+      flow_edu:      'edu',
+      flow_payment:  'payment',
+      flow_status:   'status',
+      flow_handoff:  'handoff',
+      flow_faq:      'faq',
+      flow_booking:  'booking',
+      flow_agenda:   'agenda',
     };
     let selectedFlow = flowMap[input];
 
@@ -200,21 +207,78 @@ const process = async ({ msg, contact, conversation }) => {
 };
 
 /**
- * Notifica al cliente de un pago recibido (llamado por el callback de PayCenter).
- * No depende de la sesión activa — es push desde el sistema.
+ * Notifica al cliente de un pago recibido (llamado por qr-polling.service o callback).
+ * Si el pago viene de bill-payment.flow, envía voucher de facturas + listado restante.
+ * Si viene de payment.flow genérico, envía el mensaje estándar.
  */
 const notifyPaymentReceived = async ({ phone, paymentRequest }) => {
-  const msg = MessageBuilder.paymentReceived(phone, {
-    amount: paymentRequest.amount,
-    currency: paymentRequest.currency_code,
-    orderId: paymentRequest.paycenter_order_id,
-    payerName: paymentRequest.payer_name,
-    voucherId: paymentRequest.voucher_id,
-  });
-  await sendBuilderMessage(msg);
-
-  // Actualizar estado de la conversación
+  // Leer contexto de sesión para detectar si fue un bill-payment
+  let billCtx = null;
   if (paymentRequest.conversation_id) {
+    try {
+      const session = await sessionService.getSession(paymentRequest.conversation_id);
+      if (session?.context?.paidInvoiceIds?.length) {
+        billCtx = session.context;
+      }
+    } catch {}
+  }
+
+  if (billCtx) {
+    // ── Voucher de pago de facturas ─────────────────────
+    const amount      = parseFloat(paymentRequest.amount).toFixed(2);
+    const orderId     = paymentRequest.paycenter_order_id || paymentRequest.id.slice(0, 8).toUpperCase();
+    const payerBank   = paymentRequest.payer_bank ? ` · ${paymentRequest.payer_bank.toUpperCase()}` : '';
+    const paidAt      = new Date().toLocaleString('es-BO', { timeZone: 'America/La_Paz' });
+    const invoiceList = (billCtx.paidInvoiceIds || []).join(', ');
+
+    await whatsapp.sendText(phone,
+      `✅ *¡Pago confirmado!*\n\n` +
+      `💰 Monto: *BOB ${amount}*\n` +
+      `🏢 Empresa: ${billCtx.companyName || 'Servicios'}\n` +
+      `📋 Facturas: ${invoiceList}\n` +
+      `🏦 Banco${payerBank}\n` +
+      `📅 Fecha: ${paidAt}\n` +
+      `🔖 Ref: \`${orderId}\`\n\n` +
+      `_Guardá este mensaje como comprobante._`
+    );
+
+    // Marcar facturas como pagadas en el mock
+    const { markInvoicesPaid } = require('../mock/utility.mock');
+    if (billCtx.companyId && billCtx.customerId && billCtx.paidInvoiceIds?.length) {
+      markInvoicesPaid(billCtx.companyId, billCtx.customerId, billCtx.paidInvoiceIds);
+    }
+
+    // Mostrar facturas restantes
+    const remaining = (billCtx.availableInvoices || []).filter(
+      (inv) => !(billCtx.paidInvoiceIds || []).includes(inv.id)
+    );
+    if (remaining.length > 0) {
+      let txt = `📋 *Facturas aún pendientes con ${billCtx.companyName}:*\n\n`;
+      for (const inv of remaining) {
+        txt += `• ${inv.period} — BOB ${parseFloat(inv.amount).toFixed(2)} · Vence: ${inv.due}\n`;
+      }
+      txt += `\n_Podés pagarlas en cualquier momento desde el menú._`;
+      await whatsapp.sendText(phone, txt);
+    } else {
+      await whatsapp.sendText(phone,
+        `🎉 *¡Estás al día!* No tenés más facturas pendientes con *${billCtx.companyName}*.`
+      );
+    }
+  } else {
+    // ── Pago genérico (payment.flow) ────────────────────
+    const msg = MessageBuilder.paymentReceived(phone, {
+      amount:    paymentRequest.amount,
+      currency:  paymentRequest.currency_code,
+      orderId:   paymentRequest.paycenter_order_id,
+      payerName: paymentRequest.payer_name,
+      voucherId: paymentRequest.voucher_id,
+    });
+    await sendBuilderMessage(msg);
+  }
+
+  // Resetear sesión y resolver conversación
+  if (paymentRequest.conversation_id) {
+    await sessionService.resetSession(paymentRequest.conversation_id);
     await Conversation.update(
       { status: 'resolved', resolved_at: new Date() },
       { where: { id: paymentRequest.conversation_id } }

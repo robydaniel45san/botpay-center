@@ -52,17 +52,25 @@ const isWithinBusinessHours = () => {
 const getBusinessConfig = () => {
   const menuSections = [
     {
-      title: 'Servicios',
+      title: 'Pagos y servicios',
       rows: [
-        { id: 'flow_service', title: '🏠 Pagar un servicio',  description: 'Electricidad, Agua, Internet...' },
-        { id: 'flow_payment', title: '💳 Cobro QR directo',   description: 'Crear QR sin selección de servicio' },
-        { id: 'flow_status',  title: '📊 Estado de cuenta',   description: 'Ver cobros y pagos recibidos' },
+        { id: 'flow_service', title: '🏠 Pago de servicios',   description: 'Agua, Electricidad, Internet...' },
+        { id: 'flow_recharge',title: '📱 Recargas móviles',    description: 'Tigo, Entel, Viva' },
+        { id: 'flow_tax',     title: '🏛️ Impuestos y tasas',   description: 'GAMC, SIN, patentes...' },
+        { id: 'flow_edu',     title: '🎓 Educación',           description: 'Colegios, universidades' },
+      ],
+    },
+    {
+      title: 'Consultas',
+      rows: [
+        { id: 'flow_status',  title: '📋 Mis pagos',           description: 'Ver historial de pagos' },
+        { id: 'flow_handoff', title: '🧑‍💼 Hablar con un agente', description: 'Soporte personalizado' },
       ],
     },
   ];
 
   const greetingByType = {
-    pagos:      `Hola! Soy el asistente de cobros de *${BUSINESS_NAME}* 💳\n\nTe ayudo a generar QR de cobro al instante o consultar el estado de tus pagos.`,
+    pagos:      `Bienvenido/a a tu plataforma de pago confiable *${BUSINESS_NAME}* 💳\n\nTe puedo ayudar con los pagos a los siguientes servicios o consultas de tus saldos:`,
     ropa:       `Bienvenido a *${BUSINESS_NAME}* 👗\n\nSomos tu tienda de ropa favorita. ¿En qué te podemos ayudar?`,
     salud:      `Bienvenido a *${BUSINESS_NAME}* 🏥\n\nEstamos para cuidar tu salud. ¿Cómo podemos ayudarte?`,
     comida:     `Bienvenido a *${BUSINESS_NAME}* 🍽️\n\n¡Hola! ¿Querés hacer un pedido o consultar tu cuenta?`,
@@ -93,7 +101,7 @@ const getBusinessConfig = () => {
  */
 const buildWelcome = (to, name) => {
   const config = getBusinessConfig();
-  const nameGreeting = name ? `Hola *${name}*! ` : '';
+  const nameGreeting = name ? `Hola *${name}*! 👋 ` : '';
   return {
     to,
     method: 'sendText',
