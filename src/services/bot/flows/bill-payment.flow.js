@@ -1,29 +1,50 @@
 /**
  * bill-payment.flow.js — Pago de facturas de servicios públicos
+ * RAMA: chatbot-bridge — conecta con APIs reales vía signed.client
  *
- * Pasos:
- *   start                   → muestra lista de compañías del servicio elegido
- *   waiting_company_sel     → usuario elige la compañía
- *   waiting_customer_id     → pide número de medidor / contrato
- *   waiting_invoice_sel     → selección múltiple de facturas (toggle)
- *   confirming_selection    → resumen + [✅ Sí, pagar] [❌ Cancelar]
- *   waiting_confirmation    → procesa respuesta del usuario
- *   waiting_cancel_decision → canceló: ¿volver a facturas o menú? (timeout 30 min)
- *   waiting_payment         → QR enviado; el qr-polling.service confirma el pago
+ * Para agregar una empresa nueva:
+ *   1. Registrarla en service.registry.js con su URL y auth
+ *   2. Añadirla al mapa COMPANIES de este archivo
+ *   Sin más cambios.
+ *
+ * Pasos del flujo:
+ *   start                → lista de compañías por servicio
+ *   waiting_company_sel  → elige compañía
+ *   waiting_customer_id  → ingresa número de medidor/contrato
+ *   waiting_invoice_sel  → selección acumulativa de facturas
+ *   confirming_selection → resumen + confirmar
+ *   waiting_confirmation → sí / no
+ *   waiting_payment      → QR activo (qr-polling confirma)
  */
 
-const { generatePaymentQR }                      = require('../../paycenter/qr.service');
-const { getCompaniesByService, getCompanyMeta,
-        findCustomer, markInvoicesPaid }          = require('../../mock/utility.mock');
-const logger                                      = require('../../../config/logger');
+const { generatePaymentQR } = require('../../paycenter/qr.service');
+const signedClient           = require('../../../infrastructure/services/signed.client');
+const logger                 = require('../../../config/logger');
 
 const QR_TIMEOUT_MS = 10 * 60 * 1000;
 const CONFIRM_WORDS = ['si', 'sí', 'yes', 'ok', 'dale', 'confirmar', 'confirmo', '1', 'bueno', 'claro'];
 const CANCEL_WORDS  = ['no', 'cancelar', 'cancel', 'nop', 'nope', '2'];
 
+// ── Mapa de compañías por tipo de servicio ────────────────────────────────────
+// Cada entrada referencia un serviceId registrado en service.registry.js
+const COMPANIES = {
+  agua: [
+    { id: 'saguapac', name: 'SAGUAPAC',  logo: '💧', description: 'Servicio de agua Cochabamba' },
+    { id: 'semapa',   name: 'SEMAPA',    logo: '💧', description: 'Servicio municipal de agua' },
+  ],
+  electricidad: [
+    { id: 'elfec',    name: 'ELFEC',     logo: '⚡', description: 'Electricidad Cochabamba' },
+    { id: 'cre',      name: 'CRE',       logo: '⚡', description: 'Cooperativa Rural de Electrificación' },
+  ],
+  internet: [
+    { id: 'entel',    name: 'ENTEL',     logo: '📡', description: 'Telefonía e internet ENTEL' },
+    { id: 'tigo',     name: 'Tigo',      logo: '📡', description: 'Internet y telefonía Tigo' },
+    { id: 'viva',     name: 'Viva',      logo: '📡', description: 'Internet y telefonía Viva' },
+  ],
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Lista de compañías formateada para sendList */
 const buildCompanyRows = (companies) =>
   companies.map((c) => ({
     id:          `cmp_${c.id}`,
@@ -33,13 +54,7 @@ const buildCompanyRows = (companies) =>
 
 /**
  * Selección acumulativa obligatoria (lógica Bolivia):
- * Al tocar una factura se seleccionan TODAS desde la primera hasta esa inclusive.
- * No se pueden hacer gaps — la más antigua siempre va primero.
- *
- * Ejemplo: facturas [Ene, Feb, Mar, Abr]
- *   → tocar Mar  → selecciona [Ene, Feb, Mar]
- *   → tocar Ene  → reduce a  [Ene]
- *   → tocar Ene  (ya único seleccionado) → deselecciona todo
+ * Tocar una factura selecciona TODAS desde la primera hasta esa inclusive.
  */
 const selectUpTo = (invoices, targetId) => {
   const idx = invoices.findIndex((i) => i.id === targetId);
@@ -47,18 +62,11 @@ const selectUpTo = (invoices, targetId) => {
   return invoices.slice(0, idx + 1).map((i) => i.id);
 };
 
-/** Filas de facturas: muestra seleccionadas (✅) y pendientes (📋).
- *  La descripción guía al usuario sobre qué pasa al tocar cada una. */
 const buildInvoiceRows = (invoices, selectedIds) => {
-  const rows = [];
-
-  for (let i = 0; i < invoices.length; i++) {
-    const inv        = invoices[i];
+  const rows = invoices.map((inv, i) => {
     const isSelected = selectedIds.includes(inv.id);
-    // Primera no seleccionada = la que el usuario puede añadir tocando
     const isNext     = !isSelected && i === selectedIds.length;
-
-    rows.push({
+    return {
       id:    `inv_${inv.id}`,
       title: `${isSelected ? '✅' : '📋'} ${inv.period}`,
       description: isSelected
@@ -66,40 +74,71 @@ const buildInvoiceRows = (invoices, selectedIds) => {
         : isNext
           ? `BOB ${parseFloat(inv.amount).toFixed(2)} · tocá para agregar hasta acá`
           : `BOB ${parseFloat(inv.amount).toFixed(2)} · requiere pagar las anteriores`,
-    });
-  }
+    };
+  });
 
   const totalAll = invoices.reduce((s, i) => s + parseFloat(i.amount), 0);
-  rows.push({
-    id:          'inv_all',
-    title:       '☑️ Pagar todas',
-    description: `Total: BOB ${totalAll.toFixed(2)}`,
-  });
+  rows.push({ id: 'inv_all',     title: '☑️ Pagar todas',   description: `Total: BOB ${totalAll.toFixed(2)}` });
 
   if (selectedIds.length > 0) {
     const totalSel = invoices
       .filter((i) => selectedIds.includes(i.id))
       .reduce((s, i) => s + parseFloat(i.amount), 0);
-    rows.push({
-      id:          'inv_confirm',
-      title:       '💳 Confirmar pago',
-      description: `${selectedIds.length} factura(s) · BOB ${totalSel.toFixed(2)}`,
-    });
+    rows.push({ id: 'inv_confirm', title: '💳 Confirmar pago', description: `${selectedIds.length} factura(s) · BOB ${totalSel.toFixed(2)}` });
   }
-
   return rows;
 };
 
-/** Texto del resumen de facturas seleccionadas */
 const buildSummary = (invoices, selectedIds) => {
   const selected = invoices.filter((i) => selectedIds.includes(i.id));
   const total    = selected.reduce((s, i) => s + parseFloat(i.amount), 0);
   let text = `📋 *Resumen de facturas a pagar:*\n\n`;
-  for (const inv of selected) {
-    text += `• ${inv.period} — *BOB ${parseFloat(inv.amount).toFixed(2)}*\n`;
-  }
+  for (const inv of selected) text += `• ${inv.period} — *BOB ${parseFloat(inv.amount).toFixed(2)}*\n`;
   text += `\n💰 *Total: BOB ${total.toFixed(2)}*`;
   return { text, total, selected };
+};
+
+// ── Llamadas a APIs reales ────────────────────────────────────────────────────
+
+/**
+ * Consulta facturas pendientes del cliente en la API de la empresa.
+ * El endpoint puede variar por empresa — aquí se normaliza la respuesta.
+ */
+const fetchCustomerData = async (serviceId, customerId) => {
+  const client = signedClient.for(serviceId);
+  const { data } = await client.get(`/cliente/${customerId}`);
+
+  // Normalizar respuesta al formato interno { name, address, invoices[] }
+  // Cada empresa puede tener estructura diferente — adaptar aquí si es necesario
+  return {
+    name:     data.nombre || data.name       || data.titular || customerId,
+    address:  data.direccion || data.address || '',
+    invoices: (data.facturas || data.invoices || data.cuotas || []).map((f) => ({
+      id:     f.id   || f.factura_id || f.codigo,
+      period: f.periodo || f.period  || f.mes,
+      amount: f.monto   || f.amount  || f.importe,
+      due:    f.vencimiento || f.due  || f.fecha_vencimiento || '',
+    })),
+  };
+};
+
+/**
+ * Notifica a la empresa el pago realizado.
+ */
+const notifyPayment = async (serviceId, customerId, invoiceIds, referencia, monto) => {
+  try {
+    const client = signedClient.for(serviceId);
+    await client.post('/facturas/pagar', {
+      medidor:          customerId,
+      factura_ids:      invoiceIds,
+      referencia_pago:  referencia,
+      monto_total:      monto,
+      banco:            process.env.PAYCENTER_DEFAULT_BANK || 'bmsc',
+    });
+  } catch (err) {
+    // No bloquear la confirmación si la empresa no responde
+    logger.warn(`[BillPayment] No se pudo notificar pago a ${serviceId}:`, err.message);
+  }
 };
 
 // ── Handler principal ─────────────────────────────────────────────────────────
@@ -113,46 +152,38 @@ const handle = async ({
   const ctx   = session.context || {};
 
   // ══════════════════════════════════════════════════════
-  //  START — mostrar lista de compañías disponibles
+  //  START — lista de compañías
   // ══════════════════════════════════════════════════════
   if (step === 'start') {
-    const serviceType = ctx.serviceType || 'agua';
-    const companies   = getCompaniesByService(serviceType);
+    const serviceType  = ctx.serviceType || 'agua';
+    const companies    = COMPANIES[serviceType] || [];
+    const serviceLabel = { agua: 'Agua', electricidad: 'Electricidad', internet: 'Internet' }[serviceType] || serviceType;
 
     if (!companies.length) {
-      await sendBuilderMessage({
-        to: phone, method: 'sendText',
-        text: '⚠️ No hay compañías disponibles para ese servicio.',
-      });
+      await sendBuilderMessage({ to: phone, method: 'sendText', text: '⚠️ No hay compañías disponibles para ese servicio.' });
       await sessionService.resetSession(conversation.id);
       await sendBuilderMessage(MessageBuilder.mainMenu(phone));
       return;
     }
 
-    const serviceLabel = { agua: 'Agua', electricidad: 'Electricidad', internet: 'Internet / Telefonía' }[serviceType] || serviceType;
-
     await sendBuilderMessage({
-      to:         phone,
-      method:     'sendList',
-      body:       `Seleccioná tu compañía de *${serviceLabel}*:`,
-      header:     `Compañías disponibles`,
-      footer:     '',
-      buttonText: 'Ver compañías',
-      sections:   [{ title: `Compañías de ${serviceLabel}`, rows: buildCompanyRows(companies) }],
+      to: phone, method: 'sendList',
+      body: `Seleccioná tu compañía de *${serviceLabel}*:`,
+      header: 'Compañías disponibles', footer: '', buttonText: 'Ver compañías',
+      sections: [{ title: `Compañías de ${serviceLabel}`, rows: buildCompanyRows(companies) }],
     });
-
     await sessionService.updateSession(conversation.id, { currentStep: 'waiting_company_sel' });
     return;
   }
 
   // ══════════════════════════════════════════════════════
-  //  WAITING_COMPANY_SEL — usuario elige compañía
+  //  WAITING_COMPANY_SEL
   // ══════════════════════════════════════════════════════
   if (step === 'waiting_company_sel') {
     if (!input.startsWith('cmp_')) {
       await sessionService.incrementRetry(conversation.id);
-      const companies   = getCompaniesByService(ctx.serviceType || 'agua');
-      const serviceLabel = { agua: 'Agua', electricidad: 'Electricidad', internet: 'Internet' }[ctx.serviceType] || ctx.serviceType;
+      const companies   = COMPANIES[ctx.serviceType || 'agua'] || [];
+      const serviceLabel = { agua: 'Agua', electricidad: 'Electricidad', internet: 'Internet' }[ctx.serviceType] || '';
       await sendBuilderMessage({
         to: phone, method: 'sendList',
         body: 'Seleccioná una compañía de la lista:',
@@ -162,60 +193,52 @@ const handle = async ({
       return;
     }
 
-    const companyId = input.replace(/^cmp_/, '');
-    const meta      = getCompanyMeta(companyId);
+    const companyId  = input.replace(/^cmp_/, '');
+    const allCompanies = Object.values(COMPANIES).flat();
+    const company    = allCompanies.find((c) => c.id === companyId);
 
     await sessionService.updateSession(conversation.id, {
       currentStep: 'waiting_customer_id',
-      context:     { companyId, companyName: companyId },
+      context:     { companyId, companyName: company?.name || companyId, companyLogo: company?.logo || '🏢' },
       retryCount:  0,
     });
-
     await sendBuilderMessage({
       to: phone, method: 'sendText',
-      text:
-        `✅ *${ctx.service || 'Servicio'} · ${companyId}*\n\n` +
-        `Ingresá tu *${meta.idLabel}*:\n\n_${meta.idExample}_`,
+      text: `${company?.logo || '🏢'} *${company?.name || companyId}*\n\nIngresá tu *número de medidor o contrato*:`,
     });
     return;
   }
 
   // ══════════════════════════════════════════════════════
-  //  WAITING_CUSTOMER_ID — validar número y cargar facturas
+  //  WAITING_CUSTOMER_ID — consulta a API real
   // ══════════════════════════════════════════════════════
   if (step === 'waiting_customer_id') {
-    const rawId  = (msg.text || '').trim();
-    const meta   = getCompanyMeta(ctx.companyId);
-
+    const rawId = (msg.text || '').trim();
     if (!rawId || rawId.length < 3) {
       await sessionService.incrementRetry(conversation.id);
-      await sendBuilderMessage({
-        to: phone, method: 'sendText',
-        text: `⚠️ Ingresá un número válido (${meta.idExample}).`,
-      });
+      await sendBuilderMessage({ to: phone, method: 'sendText', text: '⚠️ Ingresá un número válido.' });
       return;
     }
 
-    const customer = findCustomer(ctx.companyId, rawId);
+    await sendBuilderMessage({ to: phone, method: 'sendText', text: '🔍 Consultando tus facturas...' });
 
-    if (!customer) {
+    let customer;
+    try {
+      customer = await fetchCustomerData(ctx.companyId, rawId);
+    } catch (err) {
+      logger.error(`[BillPayment] Error consultando ${ctx.companyId}:`, err.message);
       await sessionService.incrementRetry(conversation.id);
       await sendBuilderMessage({
         to: phone, method: 'sendText',
-        text:
-          `❌ No encontré ninguna cuenta con el número *${rawId}* en *${ctx.companyId}*.\n\n` +
-          `Verificá el número e intentá de nuevo.`,
+        text: `❌ No encontré datos para el número *${rawId}* en *${ctx.companyName}*.\n\nVerificá e intentá de nuevo.`,
       });
       return;
     }
 
-    // Sin deudas → felicitamos y reseteamos
     if (!customer.invoices.length) {
       await sendBuilderMessage({
         to: phone, method: 'sendButtons',
-        body:
-          `✅ Cuenta *${rawId}* — ${customer.name}\n\n` +
-          `🎉 ¡Estás al día! No tenés facturas pendientes con *${ctx.companyId}*.`,
+        body: `✅ *${customer.name}*\n\n🎉 ¡Estás al día! No tenés facturas pendientes con *${ctx.companyName}*.`,
         buttons: [
           { id: 'flow_service', title: '🏠 Otros servicios' },
           { id: 'flow_menu',    title: '📋 Menú principal'  },
@@ -225,13 +248,11 @@ const handle = async ({
       return;
     }
 
-    // Guardar datos del cliente en contexto
     await sessionService.updateSession(conversation.id, {
       currentStep: 'waiting_invoice_sel',
       context: {
         customerId:         rawId,
         customerName:       customer.name,
-        customerAddress:    customer.address,
         availableInvoices:  customer.invoices,
         selectedInvoiceIds: [],
       },
@@ -241,41 +262,31 @@ const handle = async ({
     await sendBuilderMessage({
       to: phone, method: 'sendText',
       text:
-        `✅ *Cuenta encontrada*\n\n` +
-        `👤 ${customer.name}\n` +
-        `📍 ${customer.address}\n` +
-        `🏢 ${ctx.companyId}\n\n` +
+        `✅ *Cuenta encontrada*\n\n👤 ${customer.name}\n🏢 ${ctx.companyName}\n\n` +
         `Tenés *${customer.invoices.length} factura(s) pendiente(s)*.\n\n` +
-        `📌 _Las facturas se pagan en orden, de la más antigua a la más reciente. ` +
-        `Tocá hasta qué factura querés pagar y se incluirán todas las anteriores automáticamente._`,
+        `📌 _Las facturas se pagan en orden. Tocá hasta qué factura querés pagar y se incluirán todas las anteriores automáticamente._`,
     });
-
     await sendBuilderMessage({
-      to:         phone,
-      method:     'sendList',
-      body:       'Tocá la última factura que querés incluir en este pago:',
-      header:     `${ctx.companyId} — Facturas pendientes`,
-      footer:     'Se incluyen todas desde la más antigua hasta la que elijas',
+      to: phone, method: 'sendList',
+      body: 'Tocá la última factura que querés incluir en este pago:',
+      header: `${ctx.companyLogo} ${ctx.companyName}`,
+      footer: 'Se incluyen todas desde la más antigua hasta la que elijas',
       buttonText: 'Ver facturas',
-      sections:   [{ title: 'Facturas pendientes', rows: buildInvoiceRows(customer.invoices, []) }],
+      sections: [{ title: 'Facturas pendientes', rows: buildInvoiceRows(customer.invoices, []) }],
     });
     return;
   }
 
   // ══════════════════════════════════════════════════════
-  //  WAITING_INVOICE_SEL — toggle de facturas
+  //  WAITING_INVOICE_SEL
   // ══════════════════════════════════════════════════════
   if (step === 'waiting_invoice_sel') {
     let selectedIds = [...(ctx.selectedInvoiceIds || [])];
     const invoices  = ctx.availableInvoices || [];
 
-    // ── Confirmar selección ──────────────────────────
     if (input === 'inv_confirm') {
       if (!selectedIds.length) {
-        await sendBuilderMessage({
-          to: phone, method: 'sendText',
-          text: '⚠️ No seleccionaste ninguna factura. Tocá al menos una para continuar.',
-        });
+        await sendBuilderMessage({ to: phone, method: 'sendText', text: '⚠️ No seleccionaste ninguna factura.' });
         return;
       }
       await sessionService.updateSession(conversation.id, { currentStep: 'confirming_selection' });
@@ -283,7 +294,6 @@ const handle = async ({
       return handle({ msg, input, contact, conversation, session: s, sessionService, sendBuilderMessage, MessageBuilder });
     }
 
-    // ── Seleccionar todas ────────────────────────────
     if (input === 'inv_all') {
       selectedIds = invoices.map((i) => i.id);
       await sessionService.updateSession(conversation.id, {
@@ -294,73 +304,51 @@ const handle = async ({
       return handle({ msg, input: '__all', contact, conversation, session: s, sessionService, sendBuilderMessage, MessageBuilder });
     }
 
-    // ── Selección acumulativa obligatoria ───────────
     if (input.startsWith('inv_')) {
-      const invoiceId = input.replace(/^inv_/, '');
-      const inv       = invoices.find((i) => i.id === invoiceId);
+      const invoiceId      = input.replace(/^inv_/, '');
+      const inv            = invoices.find((i) => i.id === invoiceId);
+      if (!inv) { await sessionService.incrementRetry(conversation.id); return; }
 
-      if (!inv) {
-        await sessionService.incrementRetry(conversation.id);
-        await sendBuilderMessage({ to: phone, method: 'sendText', text: '⚠️ Factura no válida.' });
-        return;
-      }
-
-      // Si el usuario toca la única factura ya seleccionada → deselecciona todo
-      // En cualquier otro caso → selecciona todas desde la primera hasta ésta (inclusive)
       const isSoleSelected = selectedIds.length === 1 && selectedIds[0] === invoiceId;
       selectedIds = isSoleSelected ? [] : selectUpTo(invoices, invoiceId);
 
-      await sessionService.updateSession(conversation.id, {
-        context:    { selectedInvoiceIds: selectedIds },
-        retryCount: 0,
-      });
+      await sessionService.updateSession(conversation.id, { context: { selectedInvoiceIds: selectedIds }, retryCount: 0 });
 
       let feedbackText;
       if (!selectedIds.length) {
         feedbackText = `_Selección borrada. Tocá una factura para empezar._`;
       } else {
-        const total   = invoices
-          .filter((i) => selectedIds.includes(i.id))
-          .reduce((s, i) => s + parseFloat(i.amount), 0);
-        const periods = invoices
-          .filter((i) => selectedIds.includes(i.id))
-          .map((i) => i.period)
-          .join(' · ');
-        feedbackText =
-          `✅ *${selectedIds.length} factura(s) seleccionada(s):*\n` +
-          `${periods}\n\n` +
-          `💰 Total: *BOB ${total.toFixed(2)}*\n\n` +
-          `_Podés confirmar o tocar otra factura para ajustar._`;
+        const total   = invoices.filter((i) => selectedIds.includes(i.id)).reduce((s, i) => s + parseFloat(i.amount), 0);
+        const periods = invoices.filter((i) => selectedIds.includes(i.id)).map((i) => i.period).join(' · ');
+        feedbackText  =
+          `✅ *${selectedIds.length} factura(s) seleccionada(s):*\n${periods}\n\n` +
+          `💰 Total: *BOB ${total.toFixed(2)}*\n\n_Confirmá o cambiá la selección._`;
       }
 
       await sendBuilderMessage({ to: phone, method: 'sendText', text: feedbackText });
       await sendBuilderMessage({
-        to:         phone,
-        method:     'sendList',
-        body:       selectedIds.length > 0
-          ? `${selectedIds.length} incluida(s). Confirmá o cambiá la selección.`
-          : 'Tocá la última factura que querés incluir en este pago:',
-        header:     `${ctx.companyId} — Facturas`,
-        footer:     'Se incluyen todas desde la más antigua hasta la que elijas',
+        to: phone, method: 'sendList',
+        body: selectedIds.length > 0 ? `${selectedIds.length} incluida(s). Confirmá o cambiá.` : 'Tocá la última factura que querés incluir:',
+        header: `${ctx.companyLogo} ${ctx.companyName}`,
+        footer: 'Se incluyen todas desde la más antigua hasta la que elijas',
         buttonText: 'Ver facturas',
-        sections:   [{ title: 'Facturas pendientes', rows: buildInvoiceRows(invoices, selectedIds) }],
+        sections: [{ title: 'Facturas pendientes', rows: buildInvoiceRows(invoices, selectedIds) }],
       });
       return;
     }
 
-    // Input no reconocido
     await sessionService.incrementRetry(conversation.id);
     await sendBuilderMessage({
       to: phone, method: 'sendList',
-      body: 'Seleccioná una opción de la lista.',
-      header: `${ctx.companyId} — Facturas`, footer: '', buttonText: 'Ver facturas',
+      body: 'Seleccioná una opción:',
+      header: `${ctx.companyLogo} ${ctx.companyName}`, footer: '', buttonText: 'Ver facturas',
       sections: [{ title: 'Facturas pendientes', rows: buildInvoiceRows(invoices, ctx.selectedInvoiceIds || []) }],
     });
     return;
   }
 
   // ══════════════════════════════════════════════════════
-  //  CONFIRMING_SELECTION — mostrar resumen y pedir OK
+  //  CONFIRMING_SELECTION
   // ══════════════════════════════════════════════════════
   if (step === 'confirming_selection') {
     const invoices    = ctx.availableInvoices  || [];
@@ -372,34 +360,26 @@ const handle = async ({
       to: phone, method: 'sendButtons',
       body: '¿Confirmás el pago?',
       buttons: [
-        { id: 'bill_confirm', title: '✅ Sí, pagar'  },
-        { id: 'bill_cancel',  title: '❌ Cancelar'   },
+        { id: 'bill_confirm', title: '✅ Sí, pagar' },
+        { id: 'bill_cancel',  title: '❌ Cancelar'  },
       ],
     });
-    await sessionService.updateSession(conversation.id, {
-      currentStep: 'waiting_confirmation',
-      context:     { totalAmount: total },
-    });
+    await sessionService.updateSession(conversation.id, { currentStep: 'waiting_confirmation', context: { totalAmount: total } });
     return;
   }
 
   // ══════════════════════════════════════════════════════
-  //  WAITING_CONFIRMATION — procesar sí / no
+  //  WAITING_CONFIRMATION
   // ══════════════════════════════════════════════════════
   if (step === 'waiting_confirmation') {
     const isConfirm = input === 'bill_confirm' || CONFIRM_WORDS.includes(input);
     const isCancel  = input === 'bill_cancel'  || CANCEL_WORDS.includes(input);
 
-    // ── Confirmar → generar QR ───────────────────────
     if (isConfirm) {
-      await sendBuilderMessage({
-        to: phone, method: 'sendText',
-        text: '⏳ Generando tu QR de pago...',
-      });
-
+      await sendBuilderMessage({ to: phone, method: 'sendText', text: '⏳ Generando tu QR de pago...' });
       try {
         const invoiceIds  = ctx.selectedInvoiceIds || [];
-        const description = `Facturas ${ctx.companyId} (${invoiceIds.join(', ')})`.slice(0, 280);
+        const description = `Facturas ${ctx.companyName} (${invoiceIds.join(', ')})`.slice(0, 280);
 
         const pr = await generatePaymentQR({
           conversationId: conversation.id,
@@ -416,16 +396,19 @@ const handle = async ({
             paymentRequestId: pr.id,
             qrExpiry:         Date.now() + QR_TIMEOUT_MS,
             paidInvoiceIds:   invoiceIds,
+            companyId:        ctx.companyId,
+            companyName:      ctx.companyName,
+            customerId:       ctx.customerId,
+            availableInvoices: ctx.availableInvoices,
           },
         });
 
         if (pr.qr_base64) {
           await sendBuilderMessage({
-            to:     phone,
-            method: 'sendImage',
-            url:    `data:image/png;base64,${pr.qr_base64}`,
+            to: phone, method: 'sendImage',
+            url:     `data:image/png;base64,${pr.qr_base64}`,
             caption:
-              `💳 *QR de Pago — ${ctx.companyId}*\n\n` +
+              `💳 *QR de Pago — ${ctx.companyName}*\n\n` +
               `Monto: *BOB ${parseFloat(ctx.totalAmount).toFixed(2)}*\n` +
               `Ref: ${pr.paycenter_order_id}\n\n` +
               `⏳ Tenés *10 minutos* para completar el pago.\n` +
@@ -435,18 +418,15 @@ const handle = async ({
           await sendBuilderMessage({
             to: phone, method: 'sendText',
             text:
-              `✅ *QR generado*\n\n` +
-              `Monto: *BOB ${parseFloat(ctx.totalAmount).toFixed(2)}*\n` +
-              `Ref: \`${pr.paycenter_order_id}\`\n\n` +
-              `⏳ Tenés *10 minutos* para completar el pago.\n` +
+              `✅ *QR generado*\n\nMonto: *BOB ${parseFloat(ctx.totalAmount).toFixed(2)}*\n` +
+              `Ref: \`${pr.paycenter_order_id}\`\n\n⏳ Tenés *10 minutos* para pagar.\n` +
               `_Abrí la app de tu banco → Pagos QR → Escanear._`,
           });
         }
+        await sendBuilderMessage({ to: phone, method: 'sendText', text: `ℹ️ Te notificaremos automáticamente cuando confirmemos tu pago.` });
 
-        await sendBuilderMessage({
-          to: phone, method: 'sendText',
-          text: `ℹ️ Te notificaremos automáticamente cuando confirmemos tu pago.`,
-        });
+        // Notificar a la empresa del pago generado
+        await notifyPayment(ctx.companyId, ctx.customerId, invoiceIds, pr.paycenter_order_id, ctx.totalAmount);
 
       } catch (err) {
         logger.error('[BillPayment] Error generando QR:', err.message);
@@ -463,7 +443,6 @@ const handle = async ({
       return;
     }
 
-    // ── Cancelar → preguntar qué hacer ──────────────
     if (isCancel) {
       await sendBuilderMessage({
         to: phone, method: 'sendButtons',
@@ -477,7 +456,6 @@ const handle = async ({
       return;
     }
 
-    // Input no reconocido
     await sessionService.incrementRetry(conversation.id);
     await sendBuilderMessage({
       to: phone, method: 'sendButtons',
@@ -491,33 +469,27 @@ const handle = async ({
   }
 
   // ══════════════════════════════════════════════════════
-  //  WAITING_CANCEL_DECISION — volver o ir al menú
-  //  (timeout 30 min → manejado por TTL de sesión del engine)
+  //  WAITING_CANCEL_DECISION
   // ══════════════════════════════════════════════════════
   if (step === 'waiting_cancel_decision') {
     if (input === 'bill_back') {
-      await sessionService.updateSession(conversation.id, {
-        currentStep: 'waiting_invoice_sel',
-        context:     { selectedInvoiceIds: [] },
-        retryCount:  0,
-      });
+      await sessionService.updateSession(conversation.id, { currentStep: 'waiting_invoice_sel', context: { selectedInvoiceIds: [] }, retryCount: 0 });
       const invoices = ctx.availableInvoices || [];
       await sendBuilderMessage({
         to: phone, method: 'sendList',
         body: 'Tocá la última factura que querés incluir en este pago:',
-        header: `${ctx.companyId} — Facturas`, footer: 'Se incluyen todas desde la más antigua hasta la que elijas',
+        header: `${ctx.companyLogo} ${ctx.companyName}`,
+        footer: 'Se incluyen todas desde la más antigua hasta la que elijas',
         buttonText: 'Ver facturas',
         sections: [{ title: 'Facturas pendientes', rows: buildInvoiceRows(invoices, []) }],
       });
       return;
     }
-
     if (input === 'flow_menu') {
       await sessionService.resetSession(conversation.id);
       await sendBuilderMessage(MessageBuilder.mainMenu(phone));
       return;
     }
-
     await sessionService.incrementRetry(conversation.id);
     await sendBuilderMessage({
       to: phone, method: 'sendButtons',
@@ -531,8 +503,7 @@ const handle = async ({
   }
 
   // ══════════════════════════════════════════════════════
-  //  WAITING_PAYMENT — QR activo; usuario escribe algo
-  //  La confirmación/expiración la gestiona qr-polling.service
+  //  WAITING_PAYMENT
   // ══════════════════════════════════════════════════════
   if (step === 'waiting_payment') {
     const expiryMs    = ctx.qrExpiry ? ctx.qrExpiry - Date.now() : 0;
@@ -557,13 +528,11 @@ const handle = async ({
         `⏳ *Tu QR está activo.*\n\n` +
         `Monto: *BOB ${parseFloat(ctx.totalAmount || 0).toFixed(2)}*\n` +
         `Tiempo restante: *${minutesLeft} minuto(s)*\n\n` +
-        `Escanéalo con la app de tu banco para completar el pago.\n` +
-        `Te avisaremos automáticamente cuando lo confirmemos.`,
+        `Escanéalo con la app de tu banco para completar el pago.`,
     });
     return;
   }
 
-  // Fallback
   await sessionService.resetSession(conversation.id);
   await sendBuilderMessage(MessageBuilder.mainMenu(phone));
 };
