@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Contact, Conversation, Message, Tag, ContactTag, PaymentRequest, Appointment, Service } = require('../../models/index');
+const { Contact, Conversation, Message, Tag, ContactTag, PaymentRequest } = require('../../models/index');
 const { AppError } = require('../../middleware/errorHandler');
 
 // ── Listar contactos con filtros y paginación ─────────
@@ -103,19 +103,6 @@ const getPayments = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// ── Citas del contacto ────────────────────────────────
-const getAppointments = async (req, res, next) => {
-  try {
-    const appointments = await Appointment.findAll({
-      where: { contact_id: req.params.id },
-      include: [{ model: Service, as: 'service', attributes: ['name', 'emoji', 'duration_minutes'] }],
-      order: [['appointment_date', 'DESC'], ['start_time', 'DESC']],
-      limit: 20,
-    });
-    res.json({ success: true, data: appointments });
-  } catch (err) { next(err); }
-};
-
 // ── Asignar/quitar tags ───────────────────────────────
 const assignTag = async (req, res, next) => {
   try {
@@ -143,4 +130,4 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { list, getById, create, update, remove, getMessages, getPayments, getAppointments, assignTag };
+module.exports = { list, getById, create, update, remove, getMessages, getPayments, assignTag };

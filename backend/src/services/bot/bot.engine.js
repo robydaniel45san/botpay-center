@@ -30,11 +30,9 @@ const flows = {
   tax:              require('./flows/tax.flow'),
   edu:              require('./flows/edu.flow'),
   payment:          require('./flows/payment.flow'),
-  booking:          require('./flows/booking.flow'),
   status:           require('./flows/status.flow'),
   handoff:          require('./flows/handoff.flow'),
   faq:              require('./flows/faq.flow'),
-  agenda:           require('../agents/agenda.agent'),
 };
 
 const MAX_RETRIES = 3;
@@ -146,8 +144,6 @@ const process = async ({ msg, contact, conversation }) => {
       flow_status:   'status',
       flow_handoff:  'handoff',
       flow_faq:      'faq',
-      flow_booking:  'booking',
-      flow_agenda:   'agenda',
     };
     let selectedFlow = flowMap[input];
 

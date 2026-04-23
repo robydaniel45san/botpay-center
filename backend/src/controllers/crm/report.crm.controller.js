@@ -1,5 +1,5 @@
 const { Op, fn, col, literal } = require('sequelize');
-const { PaymentRequest, Conversation, Appointment, Contact, Agent, Message } = require('../../models/index');
+const { PaymentRequest, Conversation, Contact, Agent, Message } = require('../../models/index');
 const { sequelize } = require('../../config/database');
 
 // ── Reporte de pagos ──────────────────────────────────
@@ -86,23 +86,6 @@ const conversationsReport = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// ── Reporte de citas ──────────────────────────────────
-const appointmentsReport = async (req, res, next) => {
-  try {
-    const { from, to } = req.query;
-    const dateFrom = from || new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-    const dateTo   = to   || new Date().toISOString().split('T')[0];
-
-    const byStatus = await Appointment.findAll({
-      attributes: ['status', [fn('COUNT', col('id')), 'count']],
-      where: { appointment_date: { [Op.between]: [dateFrom, dateTo] } },
-      group: ['status'], raw: true,
-    });
-
-    res.json({ success: true, data: { byStatus, period: { from: dateFrom, to: dateTo } } });
-  } catch (err) { next(err); }
-};
-
 // ── Performance de agentes ────────────────────────────
 const agentsReport = async (req, res, next) => {
   try {
@@ -124,4 +107,4 @@ const agentsReport = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { paymentsReport, conversationsReport, appointmentsReport, agentsReport };
+module.exports = { paymentsReport, conversationsReport, agentsReport };

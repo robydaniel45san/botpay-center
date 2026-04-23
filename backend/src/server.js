@@ -2,7 +2,6 @@ require('dotenv').config();
 const { httpServer, io } = require('./app');
 const { connectDB } = require('./config/database');
 const { connectRedis } = require('./config/redis');
-const { startReminderJobs } = require('./services/bot/reminder.service');
 const { startQRPolling }   = require('./services/payment/qr-polling.service');
 const { startWatchdog }    = require('./services/agents/watchdog.agent');
 const logger = require('./config/logger');
@@ -22,9 +21,6 @@ const start = async () => {
 
     // Redis
     await connectRedis();
-
-    // Cron jobs de recordatorios
-    startReminderJobs();
 
     // Polling de estado de QRs contra PayCenter (cada 10s, sin necesitar su webhook)
     startQRPolling(io);

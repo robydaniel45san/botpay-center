@@ -1,6 +1,6 @@
 const { processPaymentNotification } = require('../services/paycenter/qr.service');
 const botEngine = require('../services/bot/bot.engine');
-const { Contact, Conversation, Appointment } = require('../models/index');
+const { Contact, Conversation } = require('../models/index');
 const logger = require('../config/logger');
 
 /**
@@ -64,17 +64,7 @@ const handlePaymentCallback = async (req, res) => {
       return;
     }
 
-    // 2. Si hay cita vinculada al pago, marcarla como pagada/confirmada
-    const appointment = await Appointment.findOne({
-      where: { payment_request_id: paymentRequest.id },
-    });
-
-    if (appointment) {
-      await appointment.update({ status: 'paid', confirmed_at: new Date() });
-      logger.info(`Cita ${appointment.id} marcada como pagada`);
-    }
-
-    // 3. Obtener contacto para enviar notificación WhatsApp
+    // 2. Obtener contacto para enviar notificación WhatsApp
     const contact = await Contact.findByPk(paymentRequest.contact_id);
     if (!contact) return;
 

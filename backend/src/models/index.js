@@ -6,9 +6,6 @@ const BotSession = require('./bot_session.model');
 const { Tag, ContactTag } = require('./tag.model');
 const { Pipeline, PipelineStage, Deal } = require('./pipeline.model');
 const PaymentRequest = require('./payment_request.model');
-const Service = require('./service.model');
-const Appointment = require('./appointment.model');
-const { ScheduleConfig, ScheduleBlock } = require('./schedule_config.model');
 
 // ── Contact ↔ Conversation ─────────────────────────────
 Contact.hasMany(Conversation, { foreignKey: 'contact_id', as: 'conversations' });
@@ -51,26 +48,6 @@ Contact.hasMany(PaymentRequest, { foreignKey: 'contact_id', as: 'payment_request
 PaymentRequest.belongsTo(Conversation, { foreignKey: 'conversation_id', as: 'conversation' });
 PaymentRequest.belongsTo(Contact, { foreignKey: 'contact_id', as: 'contact' });
 
-// ── Service ↔ Appointment ──────────────────────────────
-Service.hasMany(Appointment, { foreignKey: 'service_id', as: 'appointments' });
-Appointment.belongsTo(Service, { foreignKey: 'service_id', as: 'service' });
-
-// ── Contact ↔ Appointment ──────────────────────────────
-Contact.hasMany(Appointment, { foreignKey: 'contact_id', as: 'appointments' });
-Appointment.belongsTo(Contact, { foreignKey: 'contact_id', as: 'contact' });
-
-// ── Conversation ↔ Appointment ─────────────────────────
-Conversation.hasMany(Appointment, { foreignKey: 'conversation_id', as: 'appointments' });
-Appointment.belongsTo(Conversation, { foreignKey: 'conversation_id', as: 'conversation' });
-
-// ── Agent ↔ Appointment (profesional asignado) ─────────
-Agent.hasMany(Appointment, { foreignKey: 'agent_id', as: 'appointments' });
-Appointment.belongsTo(Agent, { foreignKey: 'agent_id', as: 'agent' });
-
-// ── Appointment ↔ PaymentRequest (anticipo) ────────────
-Appointment.belongsTo(PaymentRequest, { foreignKey: 'payment_request_id', as: 'payment_request' });
-PaymentRequest.hasOne(Appointment, { foreignKey: 'payment_request_id', as: 'appointment' });
-
 module.exports = {
   Contact,
   Agent,
@@ -83,8 +60,4 @@ module.exports = {
   PipelineStage,
   Deal,
   PaymentRequest,
-  Service,
-  Appointment,
-  ScheduleConfig,
-  ScheduleBlock,
 };
