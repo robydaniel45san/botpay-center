@@ -17,23 +17,18 @@ const MessageBuilder = {
       buttonText: 'Ver menú',
       sections: [
         {
-          title: 'Agenda',
+          title: 'Pagos y Servicios',
           rows: [
-            { id: 'flow_booking', title: '📅 Agendar una cita', description: 'Reserva tu hora' },
-            { id: 'flow_status', title: '🔍 Mis citas y cobros', description: 'Consultar estado' },
-          ],
-        },
-        {
-          title: 'Pagos',
-          rows: [
-            { id: 'flow_payment', title: '💳 Generar cobro QR', description: 'Cobro directo sin cita' },
+            { id: 'flow_service',  title: '🏠 Pagar un servicio',      description: 'Agua, Luz, Internet...' },
+            { id: 'flow_payment',  title: '💳 Generar cobro QR',        description: 'Cobro directo por QR' },
+            { id: 'flow_status',   title: '🔍 Estado de mis cobros',    description: 'Consultar pagos' },
           ],
         },
         {
           title: 'Soporte',
           rows: [
-            { id: 'flow_handoff', title: '🧑‍💼 Hablar con un agente', description: 'Conectar con soporte' },
-            { id: 'flow_faq', title: '❓ Preguntas frecuentes', description: 'Información general' },
+            { id: 'flow_handoff', title: '🧑‍💼 Hablar con un agente',  description: 'Conectar con soporte' },
+            { id: 'flow_faq',     title: '❓ Preguntas frecuentes',     description: 'Información general' },
           ],
         },
       ],

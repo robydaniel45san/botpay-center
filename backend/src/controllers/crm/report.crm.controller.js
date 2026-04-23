@@ -1,4 +1,4 @@
-const { Op, fn, col, literal } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 const { PaymentRequest, Conversation, Contact, Agent, Message } = require('../../models/index');
 const { sequelize } = require('../../config/database');
 

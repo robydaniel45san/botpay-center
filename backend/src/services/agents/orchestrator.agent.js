@@ -8,10 +8,9 @@
  * Si hay ambigüedad o no se detecta nada → devuelve null para mostrar el menú.
  *
  * Intenciones soportadas:
+ *   service  → quiere pagar un servicio básico (agua, luz, internet)
  *   payment  → quiere cobrar / pagar / transferir / QR
- *   booking  → quiere agendar / reservar / cita / turno
- *   status   → quiere ver estado de pago o cita
- *   agenda   → quiere ver / cancelar / reagendar sus citas
+ *   status   → quiere ver estado de un pago
  *   handoff  → quiere hablar con persona / agente / soporte
  *   faq      → tiene una pregunta general
  */
@@ -36,22 +35,6 @@ const INTENT_MAP = [
       'cobrar', 'cobro', 'pagar', 'pago', 'qr', 'transferir', 'transferencia',
       'generar', 'factura', 'precio', 'cuanto', 'cuánto', 'costo', 'costar',
       'pay', 'charge', 'invoice',
-    ],
-  },
-  {
-    flow: 'agenda',
-    keywords: [
-      'cancelar cita', 'cancelar mi cita', 'reagendar', 'cambiar cita',
-      'mis citas', 'ver cita', 'ver mis citas', 'tengo cita',
-      'cancel appointment', 'reschedule',
-    ],
-  },
-  {
-    flow: 'booking',
-    keywords: [
-      'agendar', 'agenda', 'reservar', 'reserva', 'cita', 'turno', 'appointment',
-      'quiero una cita', 'quiero turno', 'horario', 'disponibilidad',
-      'book', 'schedule',
     ],
   },
   {
@@ -134,9 +117,7 @@ const buildIntentConfirm = (to, flow, originalInput) => {
   const labels = {
     service:  '🏠 Pagar un servicio (Electricidad, Agua, Internet...)',
     payment:  '💳 Generar un cobro QR',
-    booking:  '📅 Agendar una cita',
-    agenda:   '📋 Ver o gestionar tus citas',
-    status:   '🔍 Consultar estado de pago o cita',
+    status:   '🔍 Consultar estado de pago',
     handoff:  '🧑‍💼 Hablar con un agente',
     faq:      '❓ Ver preguntas frecuentes',
   };

@@ -7,18 +7,15 @@ const router = Router();
  * POST /api/paycenter/payment-callback
  *
  * PayCenterProject llama este endpoint al confirmar un pago.
- * Se debe configurar en PayCenter como callback_url del banco
- * o como webhook post-transacción en el central.
- *
- * Seguridad: validar que el request venga de PayCenter
- * usando el header X-PayCenter-Secret (mismo JWT_SECRET compartido).
+ * Seguridad: header X-Callback-Secret debe coincidir con PAYCENTER_CALLBACK_SECRET.
+ * En desarrollo sin secret configurado, se permite pasar (mock).
  */
 router.post('/payment-callback', (req, res, next) => {
-  // Validación básica del secret compartido
-  const secret = req.headers['x-paycenter-secret'];
-  const expected = process.env.PAYCENTER_JWT_SECRET || process.env.JWT_SECRET;
+  const secret   = req.headers['x-callback-secret'];
+  const expected = process.env.PAYCENTER_CALLBACK_SECRET;
 
-  if (process.env.NODE_ENV === 'production' && secret !== expected) {
+  // Si hay secret configurado, siempre validar (dev y prod)
+  if (expected && secret !== expected) {
     return res.status(401).json({ error: 'No autorizado' });
   }
 
