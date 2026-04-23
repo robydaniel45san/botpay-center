@@ -31,7 +31,7 @@ const createQR = async ({ bank, amount, currency, description, reference, extern
   const accountNumber = _accountNumber(bank);
 
   // ── Modo mock puro: no hay PayCenter disponible ni credenciales reales ──
-  const noCredentials = !process.env.PAYCENTER_JWT_SECRET && !process.env.JWT_SECRET;
+  const noCredentials = !process.env.PAYCENTER_CLIENT_ID || !process.env.PAYCENTER_CLIENT_SECRET;
   if (MOCK_MODE && noCredentials) {
     logger.warn('[PayCenterAdapter] Modo mock activo (sin credenciales) — generando QR real');
     const mockId  = `MOCK-${Date.now()}`;
