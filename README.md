@@ -59,13 +59,7 @@ CRM + chatbot de WhatsApp para cobros QR via PayCenter.
 
 ### 1. Variables de entorno
 
-Cada parte tiene su propio `.env`:
-
-```bash
-make env
-# Crea backend/.env y frontend/.env desde sus respectivos .env.example
-# Editar cada uno con los valores reales
-```
+Cada parte tiene su propio `.env` (no se commitean al repo):
 
 **`backend/.env`** — variables obligatorias:
 ```
@@ -78,7 +72,7 @@ PAYCENTER_MERCHANT_ID=1
 JWT_SECRET=genera_con_crypto_randomBytes_64
 ```
 
-**`frontend/.env`** — solo una variable:
+**`frontend/.env`**:
 ```
 VITE_BUSINESS_NAME=Mi Negocio
 ```

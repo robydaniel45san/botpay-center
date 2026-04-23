@@ -78,9 +78,9 @@ install: ## Instala dependencias del API y frontend
 
 # ── Utilidades ───────────────────────────────────────────
 
-env: ## Crea backend/.env y frontend/.env desde sus .env.example
-	@test -f backend/.env && echo "backend/.env ya existe" || (cp backend/.env.example backend/.env && echo "backend/.env creado")
-	@test -f frontend/.env && echo "frontend/.env ya existe" || (cp frontend/.env.example frontend/.env && echo "frontend/.env creado")
+env: ## Verifica que backend/.env y frontend/.env existan
+	@test -f backend/.env && echo "backend/.env OK" || echo "FALTA backend/.env — crealo y completá los valores"
+	@test -f frontend/.env && echo "frontend/.env OK" || echo "FALTA frontend/.env — crealo con VITE_BUSINESS_NAME=..."
 
 generate-secret: ## Genera un JWT_SECRET seguro
 	@node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
