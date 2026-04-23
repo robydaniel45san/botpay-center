@@ -59,26 +59,28 @@ CRM + chatbot de WhatsApp para cobros QR via PayCenter.
 
 ### 1. Variables de entorno
 
+Cada parte tiene su propio `.env`:
+
 ```bash
-cp .env.example .env
-# Editar .env con tus credenciales
+make env
+# Crea backend/.env y frontend/.env desde sus respectivos .env.example
+# Editar cada uno con los valores reales
 ```
 
-Variables obligatorias:
-
+**`backend/.env`** — variables obligatorias:
 ```
-# WhatsApp
 META_PHONE_NUMBER_ID=...
 META_ACCESS_TOKEN=...
 META_WEBHOOK_VERIFY_TOKEN=...
-
-# PayCenter (adaptador)
 PAYCENTER_API_URL=http://localhost:3000/api/v1/bo
 PAYCENTER_JWT_SECRET=mismo_secret_que_usa_paycenter
 PAYCENTER_MERCHANT_ID=1
-
-# Auth agentes
 JWT_SECRET=genera_con_crypto_randomBytes_64
+```
+
+**`frontend/.env`** — solo una variable:
+```
+VITE_BUSINESS_NAME=Mi Negocio
 ```
 
 ### 2. Con Docker (recomendado)

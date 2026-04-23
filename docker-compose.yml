@@ -5,13 +5,13 @@ services:
   # ── API Node.js ──────────────────────────────────────
   botpay-api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: botpay-api
     restart: unless-stopped
     expose:
       - "4000"
-    env_file: .env
+    env_file: ./backend/.env
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 4000

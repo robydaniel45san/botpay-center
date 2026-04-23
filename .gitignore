@@ -1,32 +1,35 @@
-# Dependencies
+# ── Dependencias ─────────────────────────────────────────
 node_modules/
-frontend/node_modules/
 
-# Build output
+# ── Build ─────────────────────────────────────────────────
 frontend/dist/
 
-# Env
+# ── Variables de entorno (nunca al repo) ──────────────────
 .env
 .env.local
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
 
-# Logs
+# ── Logs ─────────────────────────────────────────────────
 logs/
 *.log
 
-# OS
+# ── Base de datos local ───────────────────────────────────
+data/
+
+# ── OS ───────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# IDE
+# ── IDE ──────────────────────────────────────────────────
 .vscode/
 .idea/
 
-# Claude Code
+# ── Claude Code ──────────────────────────────────────────
 CLAUDE.md
 .claude/
 
-# Docs
+# ── Docs internos ────────────────────────────────────────
 docs/
-
-# Data (SQLite)
-data/

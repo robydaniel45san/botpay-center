@@ -67,19 +67,20 @@ shell-redis: ## Redis CLI
 # ── Desarrollo local (sin Docker) ────────────────────────
 
 dev-api: ## Inicia el API en modo desarrollo (nodemon)
-	npm run dev
+	cd backend && npm run dev
 
 dev-frontend: ## Inicia el frontend en modo desarrollo (Vite)
 	cd frontend && npm run dev
 
 install: ## Instala dependencias del API y frontend
-	npm install
+	cd backend && npm install
 	cd frontend && npm install
 
 # ── Utilidades ───────────────────────────────────────────
 
-env: ## Crea .env desde .env.example (solo si no existe)
-	@test -f .env && echo ".env ya existe" || (cp .env.example .env && echo ".env creado desde .env.example")
+env: ## Crea backend/.env y frontend/.env desde sus .env.example
+	@test -f backend/.env && echo "backend/.env ya existe" || (cp backend/.env.example backend/.env && echo "backend/.env creado")
+	@test -f frontend/.env && echo "frontend/.env ya existe" || (cp frontend/.env.example frontend/.env && echo "frontend/.env creado")
 
 generate-secret: ## Genera un JWT_SECRET seguro
 	@node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"

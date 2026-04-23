@@ -1,9 +1,21 @@
 /**
- * paycenter.http.js — Cliente HTTP crudo hacia PayCenter API
+ * paycenter.http.js — Cliente HTTP hacia PayCenter API
  *
- * Solo responsabilidad: hacer llamadas HTTP a PayCenter y devolver la respuesta cruda.
- * No transforma datos. No conoce el dominio de BotPay.
- * El mapeo es responsabilidad de paycenter.mapper.js
+ * Responsabilidad única: hacer llamadas HTTP a PayCenter y devolver la respuesta cruda.
+ * No transforma datos. El mapeo es responsabilidad de paycenter.mapper.js
+ *
+ * ── Firma de incorporación (autenticación BotPay → PayCenter) ──────────────
+ * Cada petición lleva un JWT firmado con PAYCENTER_JWT_SECRET.
+ * Este secret debe ser el mismo que PayCenter usa para verificar sus peticiones
+ * entrantes de sistemas integrados (cartera de negocios).
+ *
+ * Configurar en .env:
+ *   PAYCENTER_API_URL      = URL base del API de PayCenter
+ *   PAYCENTER_JWT_SECRET   = Secret compartido con PayCenter
+ *   PAYCENTER_MERCHANT_ID  = ID del merchant registrado en PayCenter
+ *
+ * PayCenter recibe el token y verifica que proviene de un sistema autorizado.
+ * El payload del token incluye { system: 'botpay' } para identificar la fuente.
  */
 
 const axios = require('axios');
@@ -22,7 +34,8 @@ class PayCenterHttp {
     if (this._token && this._tokenExpiry && this._tokenExpiry - now > 60_000) {
       return this._token;
     }
-    const secret = process.env.PAYCENTER_JWT_SECRET || process.env.JWT_SECRET;
+    const secret = process.env.PAYCENTER_JWT_SECRET;
+    if (!secret) throw new Error('PAYCENTER_JWT_SECRET no configurado en .env');
     this._token = jwt.sign({ system: 'botpay' }, secret, { expiresIn: '1h' });
     this._tokenExpiry = now + 3_600_000;
     return this._token;
