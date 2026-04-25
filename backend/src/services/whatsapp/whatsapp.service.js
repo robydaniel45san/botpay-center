@@ -40,6 +40,13 @@ class WhatsAppService {
 
   // ── Imagen ───────────────────────────────────────────
   async sendImage(to, { url, caption } = {}) {
+    if (url && url.startsWith('data:')) {
+      const [header, base64data] = url.split(',');
+      const mimeType = header.match(/data:([^;]+)/)?.[1] || 'image/png';
+      const buffer = Buffer.from(base64data, 'base64');
+      const mediaId = await this.uploadMedia(buffer, mimeType, 'qr.png');
+      return this.sendImageById(to, mediaId, caption);
+    }
     return this.send({
       to,
       type: 'image',
@@ -140,7 +147,7 @@ class WhatsAppService {
 
   // ── Subir media a Meta y obtener media_id ────────────
   async uploadMedia(fileBuffer, mimeType, filename) {
-    const FormData = require('form_data'); // opcional si se usa
+    const FormData = require('form-data');
     const form = new FormData();
     form.append('file', fileBuffer, { contentType: mimeType, filename });
     form.append('type', mimeType);

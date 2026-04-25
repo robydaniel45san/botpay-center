@@ -8,12 +8,13 @@
  * se reemplaza este archivo. Nada más cambia.
  */
 
+const { v4: uuidv4 }  = require('uuid');
 const http            = require('./paycenter.http');
 const mapper          = require('./paycenter.mapper');
 const logger          = require('../../config/logger');
 const { generateMockQR } = require('../../services/mock/qr.generator');
 
-const MOCK_MODE = process.env.PAYCENTER_MOCK === 'true' || process.env.NODE_ENV === 'development';
+const MOCK_MODE = process.env.PAYCENTER_MOCK === 'true';
 
 const _accountNumber = (bank) => {
   const key = `PAYCENTER_ACCOUNT_${bank.toUpperCase()}`;
@@ -34,7 +35,7 @@ const createQR = async ({ bank, amount, currency, description, reference, extern
   const noCredentials = !process.env.PAYCENTER_CLIENT_ID || !process.env.PAYCENTER_CLIENT_SECRET;
   if (MOCK_MODE && noCredentials) {
     logger.warn('[PayCenterAdapter] Modo mock activo (sin credenciales) — generando QR real');
-    const mockId  = `MOCK-${Date.now()}`;
+    const mockId  = uuidv4();
     const qrBase64 = await generateMockQR({ reference: mockId, amount, bank, description, expiresAt });
     return { gatewayId: mockId, orderId: mockId, qrBase64, expiresAt, status: 'pending' };
   }
@@ -54,7 +55,7 @@ const createQR = async ({ bank, amount, currency, description, reference, extern
     // En modo desarrollo, devolver QR simulado si PayCenter no está disponible
     if (MOCK_MODE && (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET' || err.response?.status >= 500)) {
       logger.warn('[PayCenterAdapter] PayCenter no disponible — usando QR mock (real PNG)');
-      const mockId  = `MOCK-${Date.now()}`;
+      const mockId  = uuidv4();
       const expires = new Date(Date.now() + (expiresMinutes || 30) * 60 * 1000).toISOString();
       const qrBase64 = await generateMockQR({ reference: mockId, amount, bank, description, expiresAt: expires });
       return { gatewayId: mockId, orderId: mockId, qrBase64, expiresAt: expires, status: 'pending' };
